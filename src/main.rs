@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod mocks;
 pub mod postgres;
 pub mod protected;
 pub mod user;
@@ -7,6 +8,7 @@ pub mod utils;
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
 use auth::auth_routes::configure_auth_routes;
+use auth::client_oauth::configure_oauth_routes;
 use dotenvy::dotenv;
 use log::info;
 use protected::configure_protected_routes;
@@ -41,6 +43,7 @@ async fn main() -> std::io::Result<()> {
       .configure(configure_user_routes)
       .configure(configure_password_routes)
       .configure(configure_protected_routes)
+      .configure(configure_oauth_routes)
   })
   .bind("127.0.0.1:8081")?
   .run()
