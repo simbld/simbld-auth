@@ -3,28 +3,33 @@ name = "simbld-auth"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-actix-web = { version = "4.0.1", features = ["cookies"] }
-argon2 = "0.5.2"
-jsonwebtoken = "9.3.0"
-chrono = { version = "0.4.24", features = ["serde"] }
-uuid = { version = "1.11.0", features = ["v4"] }
-tokio = { version = "1.41.1", features = ["full"] }
-tokio-postgres = { version = "0.7.12", features = ["with-uuid-0_8"] }
-deadpool-postgres = "0.14.0"
-postgres-native-tls = "0.5.0"
-serde = { version = "1.0.188", features = ["derive"] }
-serde_json = "1.0.66"
-regex = "1.5.6"
-rand = "0.8.5"
-dotenvy = "0.15.6"
-async-trait = "0.1.64"
-thiserror = "2.0.6"
-log = "0.4.20"
-once_cell = "1.17.1"
-config = "0.14.1"
-simbld-http = "0.3.1"
-
 [[bin]]
-name = "simbld-auth"
+name = "simbld_auth"
 path = "src/main.rs"
+
+[dependencies]
+actix-web = { version = "4.9.0", features = ["cookies"] }
+actix-cors = "0.7.0"
+argon2 = "0.5.3"
+jsonwebtoken = "9.3.0"
+chrono = { version = "0.4.39", features = ["serde"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+tokio = { version = "1.42.0", features = ["full"] }
+tokio-postgres = { version = "0.7.12", features = ["with-uuid-0_8"] }
+deadpool-postgres = "0.14.1"
+postgres-native-tls = "0.5.0"
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"
+regex = "1.11.1"
+rand = "0.8.5"
+dotenvy = "0.15.7"
+async-trait = "0.1.83"
+thiserror = "2.0.8"
+log = "0.4.22"
+futures-util = "0.3.31"
+env_logger = "0.11.6"
+once_cell = "1.20.2"
+config = "0.15.4"
+simbld-http = "0.4.1"
+oauth2 = "4.4.2"
+reqwest = { version = "0.12.9", features = ["json"] }
