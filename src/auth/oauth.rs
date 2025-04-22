@@ -8,7 +8,7 @@ use simbld_http::responses::server::internal_server_error;
 use simbld_http::responses::success::ok;
 use std::env;
 
-use crate::auth::auth_jwt::generate_jwt;
+use crate::auth::jwt::generate_jwt;
 use crate::user::user_service::UserService;
 
 async fn login_with_google() -> impl Responder {
