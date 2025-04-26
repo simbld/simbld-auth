@@ -8,7 +8,7 @@ pub mod utils;
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
 use auth::auth_routes::configure_auth_routes;
-use auth::client_oauth::configure_oauth_routes;
+use auth::oauth::configure_oauth_routes;
 use dotenvy::dotenv;
 use log::info;
 use protected::configure_protected_routes;
