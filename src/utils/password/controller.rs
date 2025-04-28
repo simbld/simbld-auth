@@ -1,4 +1,4 @@
-use crate::auth::auth_service::AuthService;
+use crate::auth::service::AuthService;
 use crate::utils::password_generator::generate_password;
 use crate::utils::password_validator::validate_password;
 use simbld_http::responses::client::{bad_request, unauthorized};
