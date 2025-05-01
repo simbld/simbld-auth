@@ -1,4 +1,4 @@
-use crate::utils::password_controller::{generate_password_handler, validate_password_handler};
+use crate::utils::password::controller::{generate_password_handler, validate_password_handler};
 use actix_web::web;
 
 pub fn configure_password_routes(cfg: &mut web::ServiceConfig) {
