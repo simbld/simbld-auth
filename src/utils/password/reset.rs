@@ -1,4 +1,4 @@
-use crate::user::user::PasswordResetToken;
+pub(crate) use crate::user::user::PasswordResetToken;
 use chrono::{Duration as ChronoDuration, Utc};
 use tokio_postgres::{Error, GenericClient};
 use uuid::Uuid;
