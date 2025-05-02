@@ -1,3 +1,11 @@
+//! Password generator module
+//!
+//! This module provides functionality to generate a secure password
+//! - `generate_password`: Generates a random password of a specified length
+//! - `PASSWORD_LENGTH`: Constant defining the length of the password
+//! - `SHARING_SIZE`: Constant defining the size of each character category in the password
+//! - `SYMBOLS`: Constant defining the symbols to be used in the password
+
 use rand::rngs::OsRng;
 use rand::seq::SliceRandom;
 
