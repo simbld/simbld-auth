@@ -13,7 +13,7 @@ use dotenvy::dotenv;
 use log::info;
 use protected::configure_protected_routes;
 use user::user_routes::configure_user_routes;
-use utils::password_routes::configure_password_routes;
+use utils::password::routes::configure_password_routes;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
