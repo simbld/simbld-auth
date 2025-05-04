@@ -1,169 +1,146 @@
-use actix_web::{web, HttpResponse, Responder};
 use oauth2::{
-  basic::BasicClient, reqwest::async_http_client, AuthorizationCode, CsrfToken, TokenResponse,
+  basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl,
+  AuthorizationCode, CsrfToken, PkceCodeChallenge, TokenResponse,
 };
-use serde_json::json;
-use simbld_http::responses::local::user_already_exists;
-use simbld_http::responses::server::internal_server_error;
-use simbld_http::responses::success::ok;
-use std::env;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use uuid::Uuid;
 
-use crate::auth::jwt::generate_jwt;
-use crate::user::user_service::UserService;
-
-async fn login_with_google() -> impl Responder {
-  let client_id = env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID not set");
-  let client_secret = env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET not set");
-  let redirect_url = env::var("GOOGLE_REDIRECT_URL")
-    .unwrap_or_else(|_| "http://localhost:8081/auth/google/callback".to_string());
-
-  let client = BasicClient::new(
-    oauth2::ClientId::new(client_id),
-    Some(oauth2::ClientSecret::new(client_secret)),
-    oauth2::AuthUrl::new("https://accounts.google.com/o/oauth2/auth".to_string())
-      .expect("Invalid AuthUrl"),
-    Some(
-      oauth2::TokenUrl::new("https://oauth2.googleapis.com/token".to_string())
-        .expect("Invalid TokenUrl"),
-    ),
-  )
-  .set_redirect_uri(oauth2::RedirectUrl::new(redirect_url).expect("Invalid RedirectUrl"));
-
-  let (auth_url, _csrf_token) = client.authorize_url(CsrfToken::new_random).url();
-
-  // Redirection vers la page de login Google
-  HttpResponse::Found().append_header("Location", auth_url.to_string()).finish()
+#[derive(Error, Debug)]
+pub enum OAuthError {
+  #[error("OAuth configuration error: {0}")]
+  ConfigError(String),
+  #[error("OAuth request error: {0}")]
+  RequestError(String),
+  #[error("Failed to parse OAuth response: {0}")]
+  ParseError(String),
+  #[error("OAuth token error: {0}")]
+  TokenError(String),
 }
-async fn google_callback(
-  query: web::Query<std::collections::HashMap<String, String>>,
-  pool: web::Data<deadpool_postgres::Pool>,
-) -> impl Responder {
-  let client_id = env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID not set");
-  let client_secret = env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET not set");
-  let redirect_url = env::var("GOOGLE_REDIRECT_URL")
-    .unwrap_or_else(|_| "http://localhost:8081/auth/google/callback".to_string());
 
-  let client = BasicClient::new(
-    oauth2::ClientId::new(client_id),
-    Some(oauth2::ClientSecret::new(client_secret)),
-    oauth2::AuthUrl::new("https://accounts.google.com/o/oauth2/auth".to_string())
-      .expect("Invalid AuthUrl"),
-    Some(
-      oauth2::TokenUrl::new("https://oauth2.googleapis.com/token".to_string())
-        .expect("Invalid TokenUrl"),
-    ),
-  )
-  .set_redirect_uri(oauth2::RedirectUrl::new(redirect_url).expect("Invalid RedirectUrl"));
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GoogleUserInfo {
+  pub id: String,
+  pub email: String,
+  pub verified_email: bool,
+  pub name: String,
+  pub given_name: Option<String>,
+  pub family_name: Option<String>,
+  pub picture: Option<String>,
+}
 
-  let code = match query.get("code") {
-    Some(c) => c,
-    None => {
-      let mut base_json = serde_json::from_str::<serde_json::Value>(internal_server_error());
-      if let Some(obj) = base_json.as_object_mut() {
-        obj.insert("data".to_string(), json!({ "error": "Missing code parameter" }));
-      }
-      return HttpResponse::InternalServerError().json(base_json);
-    },
-  };
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GithubUserInfo {
+  pub id: i64,
+  pub login: String,
+  pub name: Option<String>,
+  pub email: Option<String>,
+  pub avatar_url: Option<String>,
+}
 
-  let token_result = client
-    .exchange_code(AuthorizationCode::new(code.to_string()))
-    .request_async(async_http_client)
-    .await;
+pub enum OAuthProvider {
+  Google,
+  Github,
+  // Ajoutez d'autres fournisseurs selon vos besoins
+}
 
-  match token_result {
-    Ok(token) => {
-      let access_token = token.access_token().secret();
-      let http_client = reqwest::Client::new();
-      let userinfo_endpoint = "https://www.googleapis.com/oauth2/v2/userinfo";
-      let userinfo_resp = http_client.get(userinfo_endpoint).bearer_auth(access_token).send().await;
+pub struct OAuthService {
+  http_client: Client,
+  providers: std::collections::HashMap<OAuthProvider, BasicClient>,
+}
 
-      if let Ok(resp) = userinfo_resp {
-        if resp.status().is_success() {
-          let user_data: serde_json::Value = resp.json().await.unwrap_or(json!({}));
-          let email = user_data["email"].as_str().unwrap_or("");
-
-          let db_client = match pool.get().await {
-            Ok(c) => c,
-            Err(_) => {
-              let mut base_json =
-                serde_json::from_str::<serde_json::Value>(internal_server_error());
-              return HttpResponse::InternalServerError().json(base_json);
-            },
-          };
-
-          let user = UserService::find_by_login_or_email(&db_client, "", email).await;
-          if user.is_none() {
-            match UserService::add_user(
-              &db_client,
-              "username_from_google",
-              "login_from_google",
-              email,
-              None,
-            )
-            .await
-            {
-              Ok(_) => ok(),
-              Err(_) => internal_server_error(),
-            }
-          } else {
-            user_already_exists()
-          }
-
-          let jwt = generate_jwt(email);
-
-          let mut resp_json = serde_json::from_str::<serde_json::Value>(ok());
-          if let Some(obj) = resp_json.as_object_mut() {
-            obj.insert(
-              "data".to_string(),
-              json!({"message": "Connexion Google réussie", "email": email}),
-            );
-          }
-
-          // Cookie HTTP-only
-          use actix_web::cookie::Cookie;
-          let cookie = Cookie::build("auth_token", jwt)
-            .http_only(true)
-            .secure(true)
-            .same_site(actix_web::cookie::SameSite::Strict)
-            .finish();
-
-          return HttpResponse::Ok().cookie(cookie).json(resp_json);
-        } else {
-          let mut base_json = serde_json::from_str::<serde_json::Value>(internal_server_error());
-          if let Some(obj) = base_json.as_object_mut() {
-            obj.insert(
-              "data".to_string(),
-              json!({ "error": "Failed to fetch user info from Google" }),
-            );
-          }
-          return HttpResponse::InternalServerError().json(base_json);
-        }
-      } else {
-        let mut base_json = serde_json::from_str::<serde_json::Value>(internal_server_error());
-        if let Some(obj) = base_json.as_object_mut() {
-          obj.insert(
-            "data".to_string(),
-            json!({ "error": "Failed to fetch user info from Google" }),
-          );
-        }
-        return HttpResponse::InternalServerError().json(base_json);
-      }
-    },
-    Err(e) => {
-      let mut base_json = serde_json::from_str::<serde_json::Value>(internal_server_error());
-      if let Some(obj) = base_json.as_object_mut() {
-        obj.insert("data".to_string(), json!({ "error": format!("Token exchange failed: {}", e) }));
-      }
-      HttpResponse::InternalServerError().json(base_json)
-    },
+impl OAuthService {
+  pub fn new() -> Self {
+    let http_client = Client::new();
+    let providers = std::collections::HashMap::new();
+    Self { http_client, providers }
   }
-}
 
-pub fn configure_oauth_routes(cfg: &mut web::ServiceConfig) {
-  cfg.service(
-    web::scope("/auth")
-      .route("/google", web::get().to(login_with_google))
-      .route("/google/callback", web::get().to(google_callback)),
-  );
+  pub fn configure_google(&mut self, client_id: String, client_secret: String, redirect_url: String) -> Result<(), OAuthError> {
+    let google_client = BasicClient::new(
+      ClientId::new(client_id),
+      Some(ClientSecret::new(client_secret)),
+      AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
+          .map_err(|e| OAuthError::ConfigError(e.to_string()))?,
+      Some(TokenUrl::new("https://oauth2.googleapis.com/token".to_string())
+          .map_err(|e| OAuthError::ConfigError(e.to_string()))?),
+    )
+        .set_redirect_uri(RedirectUrl::new(redirect_url)
+            .map_err(|e| OAuthError::ConfigError(e.to_string()))?);
+
+    self.providers.insert(OAuthProvider::Google, google_client);
+    Ok(())
+  }
+
+  pub fn configure_github(&mut self, client_id: String, client_secret: String, redirect_url: String) -> Result<(), OAuthError> {
+    let github_client = BasicClient::new(
+      ClientId::new(client_id),
+      Some(ClientSecret::new(client_secret)),
+      AuthUrl::new("https://github.com/login/oauth/authorize".to_string())
+          .map_err(|e| OAuthError::ConfigError(e.to_string()))?,
+      Some(TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
+          .map_err(|e| OAuthError::ConfigError(e.to_string()))?),
+    )
+        .set_redirect_uri(RedirectUrl::new(redirect_url)
+            .map_err(|e| OAuthError::ConfigError(e.to_string()))?);
+
+    self.providers.insert(OAuthProvider::Github, github_client);
+    Ok(())
+  }
+
+  pub fn get_authorization_url(&self, provider: &OAuthProvider) -> Result<(String, CsrfToken), OAuthError> {
+    let client = self.providers.get(provider)
+        .ok_or_else(|| OAuthError::ConfigError("Provider not configured".into()))?;
+
+    let (pkce_challenge, _pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+    let (auth_url, csrf_token) = client
+        .authorize_url(CsrfToken::new_random)
+        .set_pkce_challenge(pkce_challenge)
+        .add_scope(oauth2::Scope::new("email".to_string()))
+        .add_scope(oauth2::Scope::new("profile".to_string()))
+        .url();
+
+    Ok((auth_url.to_string(), csrf_token))
+  }
+
+  pub async fn exchange_code_for_token(&self, provider: &OAuthProvider, code: &str) -> Result<String, OAuthError> {
+    let client = self.providers.get(provider)
+        .ok_or_else(|| OAuthError::ConfigError("Provider not configured".into()))?;
+
+    let token_result = client
+        .exchange_code(AuthorizationCode::new(code.to_string()))
+        .request_async(oauth2::reqwest::async_http_client)
+        .await
+        .map_err(|e| OAuthError::TokenError(e.to_string()))?;
+
+    Ok(token_result.access_token().secret().clone())
+  }
+
+  pub async fn get_google_user_info(&self, access_token: &str) -> Result<GoogleUserInfo, OAuthError> {
+    let response = self.http_client
+        .get("https://www.googleapis.com/oauth2/v2/userinfo")
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| OAuthError::RequestError(e.to_string()))?;
+
+    response.json::<GoogleUserInfo>()
+        .await
+        .map_err(|e| OAuthError::ParseError(e.to_string()))
+  }
+
+  pub async fn get_github_user_info(&self, access_token: &str) -> Result<GithubUserInfo, OAuthError> {
+    let response = self.http_client
+        .get("https://api.github.com/user")
+        .bearer_auth(access_token)
+        .header("User-Agent", "Rust OAuth Client")
+        .send()
+        .await
+        .map_err(|e| OAuthError::RequestError(e.to_string()))?;
+
+    response.json::<GithubUserInfo>()
+        .await
+        .map_err(|e| OAuthError::ParseError(e.to_string()))
+  }
 }
