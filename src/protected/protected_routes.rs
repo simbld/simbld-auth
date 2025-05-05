@@ -1,4 +1,4 @@
-use crate::auth::auth_service::AuthService;
+use crate::auth::service::AuthService;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde_json::json;
 use simbld_http::responses::client::unauthorized;
