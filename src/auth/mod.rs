@@ -1,6 +1,11 @@
 pub mod auth_controller;
 pub mod auth_dto;
-pub mod auth_jwt;
+pub mod jwt;
 pub mod auth_routes;
-pub mod auth_service;
-pub mod client_oauth;
+pub mod service;
+pub mod oauth;
+pub mod mfa;
+mod models;
+mod middleware;
+mod auth_repository;
+mod handlers;
