@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    user_agent VARCHAR(255) NOT NULL,
+    success BOOLEAN NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
