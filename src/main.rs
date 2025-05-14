@@ -3,7 +3,6 @@ pub mod mocks;
 pub mod postgres;
 pub mod protected;
 pub mod user;
-pub mod utils;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
@@ -12,8 +11,8 @@ use auth::oauth::configure_oauth_routes;
 use dotenvy::dotenv;
 use log::info;
 use protected::configure_protected_routes;
-use user::user_routes::configure_user_routes;
-use utils::password::routes::configure_password_routes;
+use user::routes::configure_user_routes;
+use auth::password::routes::configure_password_routes;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
