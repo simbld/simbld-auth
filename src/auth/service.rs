@@ -1,464 +1,1443 @@
-use chrono::{Duration, Utc};
-use thiserror::Error;
+//! # Authentication Service
+//!
+//! This module provides the core authentication service implementation for the application.
+//! The AuthService handles user registration, authentication, token management, 
+//! MFA operations, and password management.
+
+use deadpool_postgres::Pool;
 use uuid::Uuid;
-use deadpool_postgres::Client;
+use argon2::{self, Config};
+use chrono::{Duration, Utc};
+use rand::{thread_rng, Rng};
+use rand::distributions::Alphanumeric;
+use totp_rs::{TOTP, Secret, Algorithm};
+use jwt::{encode, decode, Header, Validation};
+use serde::{Serialize, Deserialize};
 
-use crate::auth::{
-  jwt::JwtService,
-  mfa::MfaService,
-  models::{User, RefreshToken},
-  password::PasswordService,
-  repository::AuthRepository,
-};
+use crate::auth::models::{User, RefreshToken, MfaSetup};
+use crate::auth::handlers::{RegisterRequest, TokenResponse};
+use crate::auth::jwt::{Claims, JWT_SECRET};
+use crate::auth::sessions::{Session, SessionManager};
+use crate::errors::ApiError;
 
-#[derive(Error, Debug)]
-pub enum AuthError {
-  #[error("User not found")]
-  UserNotFound,
-  #[error("Invalid credentials")]
-  InvalidCredentials,
-  #[error("Account locked")]
-  AccountLocked,
-  #[error("MFA required")]
-  MfaRequired,
-  #[error("Invalid MFA code")]
-  InvalidMfaCode,
-  #[error("Token expired")]
-  TokenExpired,
-  #[error("Invalid token")]
-  InvalidToken,
-  #[error("Database error: {0}")]
-  DatabaseError(String),
-  #[error("Hashing error: {0}")]
-  HashingError(String),
-  #[error("User already exists")]
-  UserAlreadyExists,
-  #[error("Internal server error: {0}")]
-  InternalError(String),
+/// Authentication result containing user ID and MFA status
+pub struct AuthResult {
+    /// User's UUID
+    pub user_id: Uuid,
+
+    /// Flag indicating if MFA verification is required
+    pub mfa_required: bool,
 }
 
-#[derive(Debug)]
-pub struct LoginResult {
-  pub access_token: String,
-  pub refresh_token: String,
-  pub mfa_required: bool,
-  pub user_id: Uuid,
-  pub expires_in: i64,
+/// Token pair containing access and refresh tokens
+pub struct TokenPair {
+    /// JWT access token
+    pub access_token: String,
+
+    /// Refresh token for obtaining new access tokens
+    pub refresh_token: String,
 }
 
+/// MFA setup information
+pub struct MfaSetupInfo {
+    /// TOTP secret key
+    pub secret: String,
+
+    /// URI for QR code generation
+    pub provisioning_uri: String,
+}
+
+/// The main authentication service for the application
 pub struct AuthService {
-  repository: AuthRepository,
-  jwt_service: JwtService,
-  mfa_service: MfaService,
-  max_login_attempts: i32,
-  refresh_token_expiration: Duration,
+    /// Session manager instance
+    session_manager: SessionManager,
+
+    /// TOTP issuer name for MFA
+    mfa_issuer: String,
 }
 
 impl AuthService {
-  pub fn new(
-    repository: AuthRepository,
-    jwt_service: JwtService,
-    mfa_service: MfaService,
-    max_login_attempts: i32,
-    refresh_token_days: i64,
-  ) -> Self {
-    Self {
-      repository,
-      jwt_service,
-      mfa_service,
-      max_login_attempts,
-      refresh_token_expiration: Duration::days(refresh_token_days),
-    }
-  }
-
-  pub async fn register(
-    &self,
-    client: &Client,
-    username: &str,
-    email: &str,
-    password: &str,
-  ) -> Result<Uuid, AuthError> {
-    // Vérifier si l'utilisateur existe déjà
-    if self.repository.find_by_email(client, email).await.is_ok() {
-      return Err(AuthError::UserAlreadyExists);
+    /// Create a new instance of the AuthService
+    ///
+    /// # Arguments
+    ///
+    /// * `mfa_issuer` - The issuer name to use for MFA TOTP URIs
+    ///
+    /// # Returns
+    ///
+    /// A new AuthService instance
+    pub fn new(mfa_issuer: String) -> Self {
+        Self {
+            session_manager: SessionManager::new(),
+            mfa_issuer,
+        }
     }
 
-    // Valider et hacher le mot de passe
-    let password_hash = PasswordService::hash_password(password)
-        .map_err(|e| AuthError::HashingError(e.to_string()))?;
-
-    // Créer l'utilisateur
-    let user_id = self.repository.create_user(
-      client,
-      username,
-      email,
-      &password_hash,
-    )
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-    // Attribuer le rôle d'utilisateur par défaut
-    self.repository.assign_role(client, user_id, "user")
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-    Ok(user_id)
-  }
-
-  pub async fn login(
-    &self,
-    client: &Client,
-    email: &str,
-    password: &str,
-    ip_address: &str,
-    user_agent: &str,
-  ) -> Result<LoginResult, AuthError> {
-    // Trouver l'utilisateur par email
-    let user = self.repository.find_by_email(client, email)
-        .await
-        .map_err(|_| AuthError::UserNotFound)?;
-
-    // Vérifier si le compte est verrouillé
-    if user.account_locked {
-      // Enregistrer la tentative de connexion échouée
-      self.repository.record_login_attempt(
-        client,
-        Some(user.id),
-        ip_address,
-        user_agent,
-        false
-      )
-          .await
-          .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-      return Err(AuthError::AccountLocked);
-    }
-
-    // Vérifier le mot de passe
-    let valid_password = PasswordService::verify_password(password, &user.password_hash)
-        .map_err(|e| AuthError::HashingError(e.to_string()))?;
-
-    if !valid_password {
-      // Incrémenter le compteur de tentatives de connexion échouées
-      let new_failed_attempts = user.failed_login_attempts + 1;
-      let lock_account = new_failed_attempts >= self.max_login_attempts;
-
-      self.repository.update_failed_login_attempts(
-        client,
-        user.id,
-        new_failed_attempts,
-        lock_account,
-      )
-          .await
-          .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-      // Enregistrer la tentative de connexion échouée
-      self.repository.record_login_attempt(
-        client,
-        Some(user.id),
-        ip_address,
-        user_agent,
-        false
-      )
-          .await
-          .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-      return Err(AuthError::InvalidCredentials);
-    }
-
-    // Mot de passe valide, vérifier si MFA est requis
-    if user.mfa_enabled {
-      // Enregistrer la tentative de connexion réussie mais nécessitant MFA
-      self.repository.record_login_attempt(
-        client,
-        Some(user.id),
-        ip_address,
-        user_agent,
-        true
-      )
-          .await
-          .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-      return Ok(LoginResult {
-        access_token: String::new(),
-        refresh_token: String::new(),
-        mfa_required: true,
-        user_id: user.id,
-        expires_in: 0,
-      });
-    }
-
-    // Réinitialiser le compteur de tentatives de connexion échouées
-    self.repository.update_failed_login_attempts(client, user.id, 0, false)
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-    // Récupérer les rôles et permissions de l'utilisateur
-    let roles = self.repository.get_user_roles(client, user.id)
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-    let permissions = self.repository.get_user_permissions(client, user.id)
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-    // Générer les tokens
-    let access_token = self.jwt_service.generate_token(user.id, roles.clone(), permissions)
-        .map_err(|e| AuthError::InternalError(e.to_string()))?;
-
-    // Générer un refresh token
-    let refresh_token = Uuid::new_v4().to_string();
-    let expires_at = Utc::now() + self.refresh_token_expiration;
-
-    self.repository.create_refresh_token(client, user.id, &refresh_token, expires_at)
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-
-    // Mettre à jour la dernière connexion
-    self.repository.update_last_login(client, user.id)
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-    // Enregistrer la tentative de connexion réussie
-    self.repository.record_login_attempt(
-      client,
-      Some(user.id),
-      ip_address,
-      user_agent,
-      true
-    )
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
-    Ok(LoginResult {
-      access_token,
-      refresh_token,
-      mfa_required: false,
-      user_id: user.id,
-      expires_in: self.jwt_service.token_expiration.num_seconds(),
-    })
-    }
-    pub async fn verify_mfa(
+    /// Register a new user
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - The registration request containing user data
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// The newly created user on success
+    pub async fn register_user(
         &self,
-        client: &Client,
-        user_id: Uuid,
-        mfa_code: &str,
-        ) -> Result<LoginResult, AuthError> {
-        // Vérifier le code MFA
-        let valid_mfa = self.mfa_service.verify_code(client, user_id, mfa_code)
-            .await
-            .map_err(|_| AuthError::InvalidMfaCode)?;
+        req: &RegisterRequest,
+        pool: &Pool,
+    ) -> Result<User, ApiError> {
+        // Check if user with email already exists
+        let conn = pool.get().await?;
+        let stmt = conn.prepare("SELECT id FROM users WHERE email = $1").await?;
+        let rows = conn.query(&stmt, &[&req.email]).await?;
 
-        if !valid_mfa {
-            return Err(AuthError::InvalidMfaCode);
+        if !rows.is_empty() {
+            return Err(ApiError::new(
+                409,
+                "User with this email already exists".to_string(),
+            ));
         }
 
-        // Générer les tokens
-        let access_token = self.jwt_service.generate_token(user_id, vec![], vec![])
-            .map_err(|e| AuthError::InternalError(e.to_string()))?;
+        // Hash the password
+        let password_hash = self.hash_password(&req.password)?;
 
-        // Générer un refresh token
-        let refresh_token = Uuid::new_v4().to_string();
-        let expires_at = Utc::now() + self.refresh_token_expiration;
+        // Create the user
+        let stmt = conn.prepare(
+            "INSERT INTO users (username, email, password_hash) 
+             VALUES ($1, $2, $3) 
+             RETURNING id, username, email, created_at, updated_at"
+        ).await?;
 
-        self.repository.create_refresh_token(client, user_id, &refresh_token, expires_at)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        let row = conn.query_one(
+            &stmt,
+            &[&req.username, &req.email, &password_hash]
+        ).await?;
 
-        Ok(LoginResult {
+        let user = User {
+            id: row.get("id"),
+            username: row.get("username"),
+            email: row.get("email"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        };
+
+        Ok(user)
+    }
+
+    /// Authenticate a user with email and password
+    ///
+    /// # Arguments
+    ///
+    /// * `email` - User's email
+    /// * `password` - User's password
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// AuthResult containing user ID and MFA status
+    pub async fn authenticate_user(
+        &self,
+        email: &str,
+        password: &str,
+        pool: &Pool,
+    ) -> Result<AuthResult, ApiError> {
+        // Get user from database
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "SELECT id, password_hash, mfa_enabled 
+             FROM users 
+             WHERE email = $1"
+        ).await?;
+
+        let row = conn.query_opt(&stmt, &[&email]).await?
+            .ok_or_else(|| ApiError::new(401, "Invalid email or password".to_string()))?;
+
+        let user_id: Uuid = row.get("id");
+        let password_hash: String = row.get("password_hash");
+        let mfa_enabled: bool = row.get("mfa_enabled");
+
+        // Verify password
+        if !self.verify_password(password, &password_hash)? {
+            // Use a constant-time comparison function to prevent timing attacks
+            return Err(ApiError::new(401, "Invalid email or password".to_string()));
+        }
+
+        // Return result based on MFA status
+        Ok(AuthResult {
+            user_id,
+            mfa_required: mfa_enabled,
+        })
+    }
+
+    /// Verify a user's password directly
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `password` - Password to verify
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// Ok if password is verified, Error otherwise
+    pub async fn verify_password(
+        &self,
+        user_id: Uuid,
+        password: &str,
+        pool: &Pool,
+    ) -> Result<(), ApiError> {
+        // Get password hash from database
+        let conn = pool.get().await?;
+        let stmt = conn.prepare("SELECT password_hash FROM users WHERE id = $1").await?;
+
+        let row = conn.query_opt(&stmt, &[&user_id]).await?
+            .ok_or_else(|| ApiError::new(404, "User not found".to_string()))?;
+
+        let password_hash: String = row.get("password_hash");
+
+        // Verify password
+        if !self.verify_password(password, &password_hash)? {
+            return Err(ApiError::new(401, "Invalid password".to_string()));
+        }
+
+        Ok(())
+    }
+
+    /// Generate authentication tokens for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `pool` - Database connection pool
+    /// * `ip_address` - Client IP address
+    /// * `user_agent` - Client user agent
+    ///
+    /// # Returns
+    ///
+    /// TokenPair containing access and refresh tokens
+    pub async fn generate_tokens(
+        &self,
+        user_id: Uuid,
+        pool: &Pool,
+        ip_address: String,
+        user_agent: String,
+    ) -> Result<TokenPair, ApiError> {
+        // Create a new session
+        let session = self.session_manager.create_session(
+            user_id,
+            ip_address,
+            user_agent,
+            pool
+        ).await?;
+
+        // Generate JWT for access token
+        let now = Utc::now();
+        let expiry = now + Duration::hours(1);
+
+        let claims = Claims {
+            sub: user_id,
+            exp: expiry.timestamp() as usize,
+            iat: now.timestamp() as usize,
+            session_id: session.id,
+        };
+
+        let header = Header::default();
+        let access_token = encode(&header, &claims, &JWT_SECRET.as_ref())?;
+
+        // Generate refresh token
+        let refresh_token = self.generate_refresh_token(user_id, session.id, pool).await?;
+
+        Ok(TokenPair {
             access_token,
             refresh_token,
-            mfa_required: false,
-            user_id,
-            expires_in: self.jwt_service.token_expiration.num_seconds(),
         })
-        }
+    }
+
+    /// Generate a refresh token
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `session_id` - Session ID
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// Refresh token string
+    async fn generate_refresh_token(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        pool: &Pool,
+    ) -> Result<String, ApiError> {
+        // Generate random token
+        let token: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(64)
+            .map(char::from)
+            .collect();
+
+        // Store token in database
+        let conn = pool.get().await?;
+        let expiry = Utc::now() + Duration::days(7);
+
+        let stmt = conn.prepare(
+            "INSERT INTO refresh_tokens (token, user_id, session_id, expires_at) 
+             VALUES ($1, $2, $3, $4)"
+        ).await?;
+
+        conn.execute(&stmt, &[&token, &user_id, &session_id, &expiry]).await?;
+
+        Ok(token)
+    }
+
+    /// Refresh an access token using a refresh token
+    ///
+    /// # Arguments
+    ///
+    /// * `refresh_token` - Refresh token string
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// TokenPair containing new access and refresh tokens
     pub async fn refresh_token(
         &self,
-        client: &Client,
-        user_id: Uuid,
         refresh_token: &str,
-    ) -> Result<LoginResult, AuthError> {
-        // Vérifier le refresh token
-        let token = self.repository.find_refresh_token(client, user_id, refresh_token)
-            .await
-            .map_err(|_| AuthError::InvalidToken)?;
+        pool: &Pool,
+    ) -> Result<TokenPair, ApiError> {
+        // Verify refresh token
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "SELECT user_id, session_id 
+             FROM refresh_tokens 
+             WHERE token = $1 AND expires_at > $2 AND is_revoked = FALSE"
+        ).await?;
 
-        if token.expires_at < Utc::now() {
-            return Err(AuthError::TokenExpired);
+        let now = Utc::now();
+        let row = conn.query_opt(&stmt, &[&refresh_token, &now]).await?
+            .ok_or_else(|| ApiError::new(401, "Invalid or expired refresh token".to_string()))?;
+
+        let user_id: Uuid = row.get("user_id");
+        let session_id: Uuid = row.get("session_id");
+
+        // Verify session is still active
+        let session = self.session_manager.get_session(session_id, pool).await?;
+        if session.is_expired() || session.is_revoked {
+            return Err(ApiError::new(401, "Session expired or revoked".to_string()));
         }
 
-        // Générer de nouveaux tokens
-        let access_token = self.jwt_service.generate_token(user_id, vec![], vec![])
-            .map_err(|e| AuthError::InternalError(e.to_string()))?;
+        // Revoke the old refresh token
+        self.invalidate_token(refresh_token, pool).await?;
 
-        // Générer un nouveau refresh token
-        let new_refresh_token = Uuid::new_v4().to_string();
-        let expires_at = Utc::now() + self.refresh_token_expiration;
+        // Get session details
+        let ip_address = session.ip_address;
+        let user_agent = session.user_agent;
 
-        self.repository.update_refresh_token(client, user_id, refresh_token, expires_at)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        // Generate new tokens
+        let now = Utc::now();
+        let expiry = now + Duration::hours(1);
 
-        Ok(LoginResult {
+        let claims = Claims {
+            sub: user_id,
+            exp: expiry.timestamp() as usize,
+            iat: now.timestamp() as usize,
+            session_id,
+        };
+
+        let header = Header::default();
+        let access_token = encode(&header, &claims, &JWT_SECRET.as_ref())?;
+
+        // Generate new refresh token
+        let new_refresh_token = self.generate_refresh_token(user_id, session_id, pool).await?;
+
+        Ok(TokenPair {
             access_token,
             refresh_token: new_refresh_token,
-            mfa_required: false,
-            user_id,
-            expires_in: self.jwt_service.token_expiration.num_seconds(),
         })
     }
-    pub async fn logout(
+
+    /// Invalidate a refresh token
+    ///
+    /// # Arguments
+    ///
+    /// * `refresh_token` - Refresh token to invalidate
+    /// * `pool` - Database connection pool
+    pub async fn invalidate_token(
         &self,
-        client: &Client,
-        user_id: Uuid,
         refresh_token: &str,
-    ) -> Result<(), AuthError> {
-        self.repository.delete_refresh_token(client, user_id, refresh_token)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        pool: &Pool,
+    ) -> Result<(), ApiError> {
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "UPDATE refresh_tokens 
+             SET is_revoked = TRUE 
+             WHERE token = $1"
+        ).await?;
+
+        conn.execute(&stmt, &[&refresh_token]).await?;
+
         Ok(())
     }
-    pub async fn get_user_info(
+
+    /// Verify an MFA code
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `code` - MFA code to verify
+    /// * `pool` - Database connection pool
+    pub async fn verify_mfa_code(
         &self,
-        client: &Client,
         user_id: Uuid,
-    ) -> Result<User, AuthError> {
-        self.repository.find_by_id(client, user_id)
-            .await
-            .map_err(|_| AuthError::UserNotFound)
-    }
-    pub async fn update_user(
-        &self,
-        client: &Client,
-        user_id: Uuid,
-        username: Option<&str>,
-        email: Option<&str>,
-        password: Option<&str>,
-    ) -> Result<(), AuthError> {
-        if let Some(password) = password {
-            let password_hash = PasswordService::hash_password(password)
-                .map_err(|e| AuthError::HashingError(e.to_string()))?;
-            self.repository.update_password(client, user_id, &password_hash)
-                .await
-                .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        code: &str,
+        pool: &Pool,
+    ) -> Result<(), ApiError> {
+        // Get MFA secret from database
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "SELECT mfa_secret 
+             FROM users 
+             WHERE id = $1 AND mfa_enabled = TRUE"
+        ).await?;
+
+        let row = conn.query_opt(&stmt, &[&user_id]).await?
+            .ok_or_else(|| ApiError::new(400, "MFA not enabled for this user".to_string()))?;
+
+        let secret: String = row.get("mfa_secret");
+
+        // Verify code
+        let totp = self.create_totp(&secret)?;
+        if !totp.check_current(code)? {
+            return Err(ApiError::new(401, "Invalid MFA code".to_string()));
         }
 
-        self.repository.update_user(client, user_id, username, email)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Generate MFA setup information
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// MFA setup information including secret and provisioning URI
+    pub async fn generate_mfa_setup(
+        &self,
+        user_id: Uuid,
+        pool: &Pool,
+    ) -> Result<MfaSetupInfo, ApiError> {
+        // Generate a new secret
+        let secret = Secret::generate_secret().b32_encoded();
+
+        // Get user email
+        let conn = pool.get().await?;
+        let stmt = conn.prepare("SELECT email FROM users WHERE id = $1").await?;
+
+        let row = conn.query_opt(&stmt, &[&user_id]).await?
+            .ok_or_else(|| ApiError::new(404, "User not found".to_string()))?;
+
+        let email: String = row.get("email");
+
+        // Create TOTP with the secret
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            Secret::Encoded(secret.clone()).to_bytes()?,
+            Some(self.mfa_issuer.clone()),
+            email.clone(),
+        )?;
+
+        // Generate provisioning URI for QR code
+        let provisioning_uri = totp.get_provisioning_uri();
+
+        // Store the secret temporarily
+        let stmt = conn.prepare(
+            "UPDATE users 
+             SET mfa_secret = $1, mfa_enabled = FALSE 
+             WHERE id = $2"
+        ).await?;
+
+        conn.execute(&stmt, &[&secret, &user_id]).await?;
+
+        Ok(MfaSetupInfo {
+            secret,
+            provisioning_uri,
+        })
+    }
+
+    /// Verify and activate MFA
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `code` - MFA code to verify
+    /// * `pool` - Database connection pool
+    pub async fn verify_and_activate_mfa(
+        &self,
+        user_id: Uuid,
+        code: &str,
+        pool: &Pool,
+    ) -> Result<(), ApiError> {
+        // Get MFA secret from database
+        let conn = pool.get().await?;
+        let stmt = conn.prepare("SELECT mfa_secret FROM users WHERE id = $1").await?;
+
+        let row = conn.query_opt(&stmt, &[&user_id]).await?
+            .ok_or_else(|| ApiError::new(404, "User not found".to_string()))?;
+
+        let secret: String = row.get("mfa_secret");
+
+        // Verify code
+        let totp = self.create_totp(&secret)?;
+        if !totp.check_current(code)? {
+            return Err(ApiError::new(401, "Invalid MFA code".to_string()));
+        }
+
+        // Activate MFA
+        let stmt = conn.prepare(
+            "UPDATE users 
+             SET mfa_enabled = TRUE 
+             WHERE id = $1"
+        ).await?;
+
+        conn.execute(&stmt, &[&user_id]).await?;
 
         Ok(())
     }
-    pub async fn delete_user(
+
+    /// Disable MFA for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `pool` - Database connection pool
+    pub async fn disable_mfa(
         &self,
-        client: &Client,
         user_id: Uuid,
-    ) -> Result<(), AuthError> {
-        self.repository.delete_user(client, user_id)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        pool: &Pool,
+    ) -> Result<(), ApiError> {
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "UPDATE users 
+             SET mfa_enabled = FALSE, mfa_secret = NULL 
+             WHERE id = $1"
+        ).await?;
+
+        conn.execute(&stmt, &[&user_id]).await?;
+
         Ok(())
     }
-    pub async fn get_all_users(
+
+    /// Change a user's password
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `current_password` - Current password
+    /// * `new_password` - New password
+    /// * `pool` - Database connection pool
+    pub async fn change_password(
         &self,
-        client: &Client,
-    ) -> Result<Vec<User>, AuthError> {
-        self.repository.get_all_users(client)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+        user_id: Uuid,
+        current_password: &str,
+        new_password: &str,
+        pool: &Pool,
+    ) -> Result<(), ApiError> {
+        // Verify current password
+        self.verify_password(user_id, current_password, pool).await?;
+
+        // Hash the new password
+        let new_password_hash = self.hash_password(new_password)?;
+
+        // Update password in database
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "UPDATE users 
+             SET password_hash = $1, updated_at = $2 
+             WHERE id = $3"
+        ).await?;
+
+        let now = Utc::now();
+        conn.execute(&stmt, &[&new_password_hash, &now, &user_id]).await?;
+
+        // Revoke all sessions and refresh tokens
+        self.session_manager.revoke_all_sessions(user_id, pool).await?;
+
+        let stmt = conn.prepare(
+            "UPDATE refresh_tokens 
+             SET is_revoked = TRUE 
+             WHERE user_id = $1"
+        ).await?;
+
+        conn.execute(&stmt, &[&user_id]).await?;
+
+        Ok(())
     }
-    pub async fn get_user_by_email(
-        &self,
-        client: &Client,
-        email: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_email(client, email)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
-    }
+
+    /// Get user by ID
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User's ID
+    /// * `pool` - Database connection pool
+    ///
+    /// # Returns
+    ///
+    /// User object if found
     pub async fn get_user_by_id(
         &self,
-        client: &Client,
         user_id: Uuid,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_id(client, user_id)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+        pool: &Pool,
+    ) -> Result<User, ApiError> {
+        let conn = pool.get().await?;
+        let stmt = conn.prepare(
+            "SELECT id, username, email, created_at, updated_at 
+             FROM users 
+             WHERE id = $1"
+        ).await?;
+
+        let row = conn.query_opt(&stmt, &[&user_id]).await?
+            .ok_or_else(|| ApiError::new(404, "User not found".to_string()))?;
+
+        let user = User {
+            id: row.get("id"),
+            username: row.get("username"),
+            email: row.get("email"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        };
+
+        Ok(user)
     }
-    pub async fn get_user_by_username(
-        &self,
-        client: &Client,
-        username: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_username(client, username)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+
+    /// Hash a password using Argon2
+    ///
+    /// # Arguments
+    ///
+    /// * `password` - Password to hash
+    ///
+    /// # Returns
+    ///
+    /// Hashed password
+    fn hash_password(&self, password: &str) -> Result<String, ApiError> {
+        let salt: [u8; 32] = thread_rng().gen();
+        let config = Config::default();
+
+        let hash = argon2::hash_encoded(
+            password.as_bytes(),
+            &salt,
+            &config,
+        )?;
+
+        Ok(hash)
     }
-    pub async fn get_user_by_login(
-        &self,
-        client: &Client,
-        login: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_login(client, login)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+
+    /// Verify a password against its hash
+    ///
+    /// # Arguments
+    ///
+    /// * `password` - Password to verify
+    /// * `hash` - Hash to verify against
+    ///
+    /// # Returns
+    ///
+    /// true if password is valid, false otherwise
+    fn verify_password(&self, password: &str, hash: &str) -> Result<bool, ApiError> {
+        Ok(argon2::verify_encoded(hash, password.as_bytes())?)
     }
-    pub async fn get_user_by_refresh_token(
-        &self,
-        client: &Client,
-        refresh_token: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_refresh_token(client, refresh_token)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+
+    /// Create a TOTP instance from a secret
+    ///
+    /// # Arguments
+    ///
+    /// * `secret` - TOTP secret
+    ///
+    /// # Returns
+    ///
+    /// TOTP instance
+    fn create_totp(&self, secret: &str) -> Result<TOTP, ApiError> {
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            Secret::Encoded(secret.to_string()).to_bytes()?,
+            None,
+            String::new(),
+        )?;
+
+        Ok(totp)
     }
-    pub async fn get_user_by_oauth(
-        &self,
-        client: &Client,
-        provider: &str,
-        provider_user_id: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_oauth(client, provider, provider_user_id)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::errors::ApiError;
+        use deadpool_postgres::{Client, Pool};
+        use mockall::{mock, predicate::*};
+        use std::str::FromStr;
+        use tokio_postgres::Row;
+        use uuid::Uuid;
+
+        // Mocks pour les dépendances
+        mock! {
+        pub SessionManager {}
+        impl SessionManager {
+            pub async fn create_session(
+                &self,
+                user_id: Uuid,
+                ip_address: String,
+                user_agent: String,
+                pool: &Pool
+            ) -> Result<Session, ApiError>;
+
+            pub async fn get_session_by_id(
+                &self,
+                session_id: Uuid,
+                pool: &Pool
+            ) -> Result<Session, ApiError>;
+
+            pub async fn invalidate_session(
+                &self,
+                session_id: Uuid,
+                pool: &Pool
+            ) -> Result<(), ApiError>;
+        }
     }
-    pub async fn get_user_by_oauth_token(
-        &self,
-        client: &Client,
-        provider: &str,
-        access_token: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_oauth_token(client, provider, access_token)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+
+        mock! {
+        pub PostgresPool {}
+        impl Clone for PostgresPool {
+            fn clone(&self) -> Self;
+        }
+        impl PostgresPool {
+            pub async fn get(&self) -> Result<Client, deadpool_postgres::PoolError>;
+        }
     }
-    pub async fn get_user_by_oauth_refresh_token(
-        &self,
-        client: &Client,
-        provider: &str,
-        refresh_token: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_oauth_refresh_token(client, provider, refresh_token)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
+
+        mock! {
+        pub PostgresClient {}
+        impl PostgresClient {
+            pub async fn query_one<T: tokio_postgres::types::ToSql + Sync>(
+                &self,
+                statement: &str,
+                params: &[T]
+            ) -> Result<Row, tokio_postgres::Error>;
+
+            pub async fn query<T: tokio_postgres::types::ToSql + Sync>(
+                &self,
+                statement: &str,
+                params: &[T]
+            ) -> Result<Vec<Row>, tokio_postgres::Error>;
+
+            pub async fn execute<T: tokio_postgres::types::ToSql + Sync>(
+                &self,
+                statement: &str,
+                params: &[T]
+            ) -> Result<u64, tokio_postgres::Error>;
+        }
     }
-    pub async fn get_user_by_oauth_expires_at(
-        &self,
-        client: &Client,
-        provider: &str,
-        expires_at: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_oauth_expires_at(client, provider, expires_at)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
-    }
-    pub async fn get_user_by_oauth_access_token(
-        &self,
-        client: &Client,
-        provider: &str,
-        access_token: &str,
-    ) -> Result<Option<User>, AuthError> {
-        self.repository.find_by_oauth_access_token(client, provider, access_token)
-            .await
-            .map_err(|e| AuthError::DatabaseError(e.to_string()))
-    }
+
+        // Fonction d'aide pour créer un AuthService de test
+        fn create_test_auth_service() -> AuthService {
+            AuthService::new("test-issuer".to_string())
+        }
+
+        // Fonction d'aide pour créer un UUID valide
+        fn test_uuid() -> Uuid {
+            Uuid::from_str("00000000-0000-0000-0000-000000000001").unwrap()
+        }
+
+        #[tokio::test]
+        async fn test_register_user_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            // Configuration du mock pour simuler l'absence d'utilisateur existant
+            mock_client.expect_query()
+                .with(eq("SELECT * FROM users WHERE email = $1"), any())
+                .times(1)
+                .returning(|_, _| Ok(vec![]));
+
+            // Configuration du mock pour simuler l'insertion d'un nouvel utilisateur
+            mock_client.expect_query_one()
+                .with(eq("INSERT INTO users (email, password_hash, display_name, profile_image) VALUES ($1, $2, $3, $4) RETURNING *"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("id", test_uuid())
+                        .add_column("email", "test@example.com")
+                        .add_column("password_hash", "hashed_password")
+                        .add_column("display_name", "Test User")
+                        .add_column("profile_image", "https://example.com/profile.jpg")
+                        .add_column("is_active", true)
+                        .add_column("mfa_enabled", false)
+                        .add_column("mfa_secret", Option::<String>::None)
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let register_request = RegisterRequest {
+                email: "test@example.com".to_string(),
+                password: "securepassword".to_string(),
+                display_name: Some("Test User".to_string()),
+                profile_image: Some("https://example.com/profile.jpg".to_string()),
+            };
+
+            let result = auth_service.register_user(&register_request, &mock_pool).await;
+
+            assert!(result.is_ok());
+
+            let user = result.unwrap();
+            assert_eq!(user.email, "test@example.com");
+            assert_eq!(user.display_name, Some("Test User".to_string()));
+            assert_eq!(user.profile_image, Some("https://example.com/profile.jpg".to_string()));
+            assert_eq!(user.is_active, true);
+            assert_eq!(user.mfa_enabled, false);
+        }
+
+        #[tokio::test]
+        async fn test_register_user_duplicate_email() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            // Configuration du mock pour simuler un utilisateur existant
+            mock_client.expect_query()
+                .with(eq("SELECT * FROM users WHERE email = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("id", test_uuid())
+                        .add_column("email", "test@example.com")
+                        .build();
+                    Ok(vec![row])
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let register_request = RegisterRequest {
+                email: "test@example.com".to_string(),
+                password: "securepassword".to_string(),
+                display_name: None,
+                profile_image: None,
+            };
+
+            let result = auth_service.register_user(&register_request, &mock_pool).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(ApiError::Conflict(msg)) => {
+                    assert!(msg.contains("email already exists"));
+                },
+                _ => panic!("Expected Conflict error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_authenticate_user_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            // Configure mock pour simuler un utilisateur existant avec mot de passe correct
+            mock_client.expect_query_one()
+                .with(eq("SELECT * FROM users WHERE email = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("id", test_uuid())
+                        .add_column("email", "test@example.com")
+                        .add_column("password_hash", "$2b$12$S9vahIaQY.lpMOv/s9bFFeaGKRz1r9N6pW5AsbLiJRGGET1vKqhAS") // 'password' hashed
+                        .add_column("is_active", true)
+                        .add_column("mfa_enabled", false)
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.authenticate_user("test@example.com", "password", &mock_pool).await;
+
+            assert!(result.is_ok());
+            let auth_result = result.unwrap();
+            assert_eq!(auth_result.user_id, test_uuid());
+            assert_eq!(auth_result.mfa_required, false);
+        }
+
+        #[tokio::test]
+        async fn test_authenticate_user_invalid_password() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            // Configure mock pour simuler un utilisateur existant avec mot de passe incorrect
+            mock_client.expect_query_one()
+                .with(eq("SELECT * FROM users WHERE email = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("id", test_uuid())
+                        .add_column("email", "test@example.com")
+                        .add_column("password_hash", "$2b$12$S9vahIaQY.lpMOv/s9bFFeaGKRz1r9N6pW5AsbLiJRGGET1vKqhAS") // 'password' hashed
+                        .add_column("is_active", true)
+                        .add_column("mfa_enabled", false)
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.authenticate_user("test@example.com", "wrong_password", &mock_pool).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(ApiError::Unauthorized(msg)) => {
+                    assert!(msg.contains("Invalid credentials"));
+                },
+                _ => panic!("Expected Unauthorized error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_authenticate_user_inactive_account() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            // Configure mock pour simuler un utilisateur inactif
+            mock_client.expect_query_one()
+                .with(eq("SELECT * FROM users WHERE email = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("id", test_uuid())
+                        .add_column("email", "test@example.com")
+                        .add_column("password_hash", "$2b$12$S9vahIaQY.lpMOv/s9bFFeaGKRz1r9N6pW5AsbLiJRGGET1vKqhAS")
+                        .add_column("is_active", false)
+                        .add_column("mfa_enabled", false)
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.authenticate_user("test@example.com", "password", &mock_pool).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(ApiError::Unauthorized(msg)) => {
+                    assert!(msg.contains("Account is inactive"));
+                },
+                _ => panic!("Expected Unauthorized error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_authenticate_user_mfa_required() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            // Configure mock pour simuler un utilisateur avec MFA activé
+            mock_client.expect_query_one()
+                .with(eq("SELECT * FROM users WHERE email = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("id", test_uuid())
+                        .add_column("email", "test@example.com")
+                        .add_column("password_hash", "$2b$12$S9vahIaQY.lpMOv/s9bFFeaGKRz1r9N6pW5AsbLiJRGGET1vKqhAS")
+                        .add_column("is_active", true)
+                        .add_column("mfa_enabled", true)
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.authenticate_user("test@example.com", "password", &mock_pool).await;
+
+            assert!(result.is_ok());
+            let auth_result = result.unwrap();
+            assert_eq!(auth_result.user_id, test_uuid());
+            assert_eq!(auth_result.mfa_required, true);
+        }
+
+        #[tokio::test]
+        async fn test_generate_tokens_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+            let mut mock_session_manager = MockSessionManager::new();
+
+            let user_id = test_uuid();
+            let session_id = Uuid::from_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+            // Configure mock pour récupérer les rôles de l'utilisateur
+            mock_client.expect_query()
+                .with(eq("SELECT r.role_name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row1 = MockRow::new()
+                        .add_column("role_name", "USER")
+                        .build();
+                    let row2 = MockRow::new()
+                        .add_column("role_name", "ADMIN")
+                        .build();
+                    Ok(vec![row1, row2])
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            // Configure mock pour la création d'une session
+            let session = Session {
+                id: session_id,
+                user_id,
+                ip_address: "127.0.0.1".to_string(),
+                user_agent: "Mozilla/5.0".to_string(),
+                expires_at: chrono::Utc::now() + chrono::Duration::days(7),
+                is_revoked: false,
+                last_activity: chrono::Utc::now(),
+                created_at: chrono::Utc::now(),
+            };
+
+            mock_session_manager.expect_create_session()
+                .with(eq(user_id), eq("127.0.0.1".to_string()), eq("Mozilla/5.0".to_string()), any())
+                .times(1)
+                .returning(move |_, _, _, _| Ok(session.clone()));
+
+            let auth_service = AuthService {
+                session_manager: mock_session_manager,
+                mfa_issuer: "test-issuer".to_string(),
+            };
+
+            let result = auth_service.generate_tokens(
+                user_id,
+                &mock_pool,
+                "127.0.0.1".to_string(),
+                "Mozilla/5.0".to_string()
+            ).await;
+
+            assert!(result.is_ok());
+
+            let token_pair = result.unwrap();
+            assert!(!token_pair.access_token.is_empty());
+            assert!(!token_pair.refresh_token.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_refresh_token_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+            let mut mock_session_manager = MockSessionManager::new();
+
+            let user_id = test_uuid();
+            let session_id = Uuid::from_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+            // Configure mock pour récupérer les rôles de l'utilisateur
+            mock_client.expect_query()
+                .with(eq("SELECT r.role_name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("role_name", "USER")
+                        .build();
+                    Ok(vec![row])
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            // Configure mock pour récupérer la session
+            let session = Session {
+                id: session_id,
+                user_id,
+                ip_address: "127.0.0.1".to_string(),
+                user_agent: "Mozilla/5.0".to_string(),
+                expires_at: chrono::Utc::now() + chrono::Duration::days(7),
+                is_revoked: false,
+                last_activity: chrono::Utc::now(),
+                created_at: chrono::Utc::now(),
+            };
+
+            mock_session_manager.expect_get_session_by_id()
+                .with(eq(session_id), any())
+                .times(1)
+                .returning(move |_, _| Ok(session.clone()));
+
+            let auth_service = AuthService {
+                session_manager: mock_session_manager,
+                mfa_issuer: "test-issuer".to_string(),
+            };
+
+            // Créer un refresh token valide
+            let refresh_token = "valid_refresh_token"; // Simuler un token JWT valide décodé par le service
+
+            let result = auth_service.refresh_token(refresh_token, &mock_pool).await;
+
+            assert!(result.is_ok());
+
+            let token_pair = result.unwrap();
+            assert!(!token_pair.access_token.is_empty());
+            assert!(!token_pair.refresh_token.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_refresh_token_revoked_session() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_session_manager = MockSessionManager::new();
+
+            let user_id = test_uuid();
+            let session_id = Uuid::from_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+            // Configure mock pour récupérer une session révoquée
+            let session = Session {
+                id: session_id,
+                user_id,
+                ip_address: "127.0.0.1".to_string(),
+                user_agent: "Mozilla/5.0".to_string(),
+                expires_at: chrono::Utc::now() + chrono::Duration::days(7),
+                is_revoked: true, // Session révoquée
+                last_activity: chrono::Utc::now(),
+                created_at: chrono::Utc::now(),
+            };
+
+            mock_session_manager.expect_get_session_by_id()
+                .with(eq(session_id), any())
+                .times(1)
+                .returning(move |_, _| Ok(session.clone()));
+
+            let auth_service = AuthService {
+                session_manager: mock_session_manager,
+                mfa_issuer: "test-issuer".to_string(),
+            };
+
+            // Créer un refresh token valide
+            let refresh_token = "valid_refresh_token"; // Simuler un token JWT valide décodé par le service
+
+            let result = auth_service.refresh_token(refresh_token, &mock_pool).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(ApiError::Unauthorized(msg)) => {
+                    assert!(msg.contains("Session has been revoked"));
+                },
+                _ => panic!("Expected Unauthorized error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_invalidate_token_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_session_manager = MockSessionManager::new();
+
+            let session_id = Uuid::from_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+            mock_session_manager.expect_invalidate_session()
+                .with(eq(session_id), any())
+                .times(1)
+                .returning(|_, _| Ok(()));
+
+            let auth_service = AuthService {
+                session_manager: mock_session_manager,
+                mfa_issuer: "test-issuer".to_string(),
+            };
+
+            // Créer un refresh token valide
+            let refresh_token = "valid_refresh_token"; // Simuler un token JWT valide décodé par le service
+
+            let result = auth_service.invalidate_token(refresh_token, &mock_pool).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_verify_mfa_code_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer le secret MFA de l'utilisateur
+            mock_client.expect_query_one()
+                .with(eq("SELECT mfa_secret FROM users WHERE id = $1 AND mfa_enabled = true"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("mfa_secret", "JBSWY3DPEHPK3PXP") // Secret TOTP valide
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            // Code MFA valide pour le secret donné (simulé)
+            let code = "123456";
+
+            let result = auth_service.verify_mfa_code(user_id, code, &mock_pool).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_verify_mfa_code_invalid() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer le secret MFA de l'utilisateur
+            mock_client.expect_query_one()
+                .with(eq("SELECT mfa_secret FROM users WHERE id = $1 AND mfa_enabled = true"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("mfa_secret", "JBSWY3DPEHPK3PXP") // Secret TOTP valide
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            // Code MFA invalide pour le secret donné
+            let code = "999999";
+
+            let result = auth_service.verify_mfa_code(user_id, code, &mock_pool).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(ApiError::Unauthorized(msg)) => {
+                    assert!(msg.contains("Invalid MFA code"));
+                },
+                _ => panic!("Expected Unauthorized error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_generate_mfa_setup_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer l'utilisateur
+            mock_client.expect_query_one()
+                .with(eq("SELECT email FROM users WHERE id = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("email", "test@example.com")
+                        .build();
+                    Ok(row)
+                });
+
+            // Configure mock pour mettre à jour le secret MFA de l'utilisateur
+            mock_client.expect_execute()
+                .with(eq("UPDATE users SET mfa_secret = $1 WHERE id = $2"), any())
+                .times(1)
+                .returning(|_, _| Ok(1));
+
+            mock_pool.expect_get()
+                .times(2)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.generate_mfa_setup(user_id, &mock_pool).await;
+
+            assert!(result.is_ok());
+
+            let setup_info = result.unwrap();
+            assert!(!setup_info.secret.is_empty());
+            assert!(setup_info.provisioning_uri.contains("test@example.com"));
+        }
+
+        #[tokio::test]
+        async fn test_verify_and_activate_mfa_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer le secret MFA de l'utilisateur
+            mock_client.expect_query_one()
+                .with(eq("SELECT mfa_secret FROM users WHERE id = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("mfa_secret", "JBSWY3DPEHPK3PXP") // Secret TOTP valide
+                        .build();
+                    Ok(row)
+                });
+
+            // Configure mock pour activer MFA pour l'utilisateur
+            mock_client.expect_execute()
+                .with(eq("UPDATE users SET mfa_enabled = true WHERE id = $1"), any())
+                .times(1)
+                .returning(|_, _| Ok(1));
+
+            mock_pool.expect_get()
+                .times(2)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            // Code MFA valide pour le secret donné (simulé)
+            let code = "123456";
+
+            let result = auth_service.verify_and_activate_mfa(user_id, code, &mock_pool).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_verify_and_activate_mfa_invalid_code() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer le secret MFA de l'utilisateur
+            mock_client.expect_query_one()
+                .with(eq("SELECT mfa_secret FROM users WHERE id = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("mfa_secret", "JBSWY3DPEHPK3PXP") // Secret TOTP valide
+                        .build();
+                    Ok(row)
+                });
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            // Code MFA invalide pour le secret donné
+            let code = "999999";
+
+            let result = auth_service.verify_and_activate_mfa(user_id, code, &mock_pool).await;
+
+            assert!(result.is_err());
+            match result {
+                Err(ApiError::Unauthorized(msg)) => {
+                    assert!(msg.contains("Invalid MFA code"));
+                },
+                _ => panic!("Expected Unauthorized error"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_disable_mfa_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour désactiver MFA pour l'utilisateur
+            mock_client.expect_execute()
+                .with(eq("UPDATE users SET mfa_enabled = false, mfa_secret = NULL WHERE id = $1"), any())
+                .times(1)
+                .returning(|_, _| Ok(1));
+
+            mock_pool.expect_get()
+                .times(1)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.disable_mfa(user_id, &mock_pool).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_change_password_success() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer le hash de mot de passe actuel
+            mock_client.expect_query_one()
+                .with(eq("SELECT password_hash FROM users WHERE id = $1"), any())
+                .times(1)
+                .returning(|_, _| {
+                    let row = MockRow::new()
+                        .add_column("password_hash", "$2b$12$S9vahIaQY.lpMOv/s9bFFeaGKRz1r9N6pW5AsbLiJRGGET1vKqhAS") // 'current_password' hashed
+                        .build();
+                    Ok(row)
+                });
+
+            // Configure mock pour mettre à jour le mot de passe
+            mock_client.expect_execute()
+                .with(eq("UPDATE users SET password_hash = $1 WHERE id = $2"), any())
+                .times(1)
+                .returning(|_, _| Ok(1));
+
+            mock_pool.expect_get()
+                .times(2)
+                .returning(move || Ok(mock_client.clone()));
+
+            let auth_service = create_test_auth_service();
+
+            let result = auth_service.change_password(
+                user_id,
+                "current_password",
+                "new_secure_password",
+                &mock_pool
+            ).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_change_password_invalid_current() {
+            let mut mock_pool = MockPostgresPool::new();
+            let mut mock_client = MockPostgresClient::new();
+
+            let user_id = test_uuid();
+
+            // Configure mock pour récupérer le hash de mot
 }
