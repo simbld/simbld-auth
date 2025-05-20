@@ -1440,4 +1440,6 @@ impl AuthService {
             let user_id = test_uuid();
 
             // Configure mock pour récupérer le hash de mot
+        }
+    }
 }
