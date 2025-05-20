@@ -313,6 +313,7 @@ impl MfaMethod for RecoveryCodeProvider {
         "recovery_code"
     }
 
+}
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -477,4 +478,3 @@ impl MfaMethod for RecoveryCodeProvider {
             assert_eq!(settings.remaining_codes, 8);
         }
     }
-}
