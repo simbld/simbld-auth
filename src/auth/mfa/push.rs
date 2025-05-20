@@ -470,6 +470,7 @@ impl PushClient for FcmPushClient {
         Ok(())
     }
 
+}
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -594,4 +595,3 @@ impl PushClient for FcmPushClient {
             assert_eq!(client.api_key, "test-api-key");
         }
     }
-}
