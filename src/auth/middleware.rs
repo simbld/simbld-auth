@@ -4,19 +4,19 @@
 //! These middlewares verify tokens, extract user information, and enforce access control.
 
 use std::future::{ready, Ready};
+use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
-use std::pin::Pin;
 
+use actix_web::error::ErrorUnauthorized;
 use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
     Error, HttpMessage,
 };
-use actix_web::error::ErrorUnauthorized;
 use futures_util::future::LocalBoxFuture;
 use uuid::Uuid;
 
-use crate::auth::jwt::{JwtManager, Claims};
+use crate::auth::jwt::{Claims, JwtManager};
 use crate::auth::models::Role;
 use crate::errors::ApiError;
 
@@ -97,10 +97,7 @@ where
         // If not authenticated, return an error
         if !authenticated {
             let fut = async {
-                Err(ErrorUnauthorized(ApiError::new(
-                    401,
-                    "Authentication required".to_string(),
-                )))
+                Err(ErrorUnauthorized(ApiError::new(401, "Authentication required".to_string())))
             };
             return Box::pin(fut);
         }
@@ -208,10 +205,7 @@ where
         // If not authorized with the required role, return a forbidden error
         if !has_required_role {
             let fut = async {
-                Err(ErrorUnauthorized(ApiError::new(
-                    403,
-                    "Insufficient permissions".to_string(),
-                )))
+                Err(ErrorUnauthorized(ApiError::new(403, "Insufficient permissions".to_string())))
             };
             return Box::pin(fut);
         }
@@ -280,10 +274,8 @@ mod tests {
 
     // Helper function to get current timestamp in seconds
     fn current_timestamp() -> usize {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs() as usize
+        SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs()
+            as usize
     }
 
     // Mock endpoint for authentication tests
@@ -302,7 +294,8 @@ mod tests {
     }
 
     // Helper function to create a test app with authentication middleware
-    fn create_test_app() -> impl Service<actix_web::dev::Request, Response = ServiceResponse, Error = Error> {
+    fn create_test_app(
+    ) -> impl Service<actix_web::dev::Request, Response = ServiceResponse, Error = Error> {
         let jwt_manager = JwtManager::default();
 
         test::init_service(
@@ -311,12 +304,14 @@ mod tests {
                 .service(web::resource("/protected").to(mock_protected_endpoint))
                 .service(web::resource("/user").to(mock_user_endpoint))
                 .service(web::resource("/claims").to(mock_claims_endpoint))
-                .app_data(web::Data::new(jwt_manager))
+                .app_data(web::Data::new(jwt_manager)),
         )
     }
 
     // Helper function to create a test app with role-based middleware
-    fn create_role_test_app(required_role: Role) -> (
+    fn create_role_test_app(
+        required_role: Role,
+    ) -> (
         impl Service<actix_web::dev::Request, Response = ServiceResponse, Error = Error>,
         JwtManager,
     ) {
@@ -327,7 +322,7 @@ mod tests {
                 .wrap(Authentication::new(jwt_manager.clone()))
                 .wrap(RequireRole::new(jwt_manager.clone(), required_role))
                 .service(web::resource("/admin").to(mock_protected_endpoint))
-                .app_data(web::Data::new(jwt_manager.clone()))
+                .app_data(web::Data::new(jwt_manager.clone())),
         );
 
         (app, jwt_manager)
