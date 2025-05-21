@@ -56,10 +56,7 @@ impl BackupCodeService {
 
         // Check if user already has backup codes
         let existing = client
-            .query_opt(
-                "SELECT id FROM user_backup_codes WHERE user_id = $1",
-                &[&user_id],
-            )
+            .query_opt("SELECT id FROM user_backup_codes WHERE user_id = $1", &[&user_id])
             .await
             .map_err(|e| BackupCodeError::DatabaseError(e.to_string()))?;
 
@@ -98,10 +95,7 @@ impl BackupCodeService {
     ) -> Result<bool, BackupCodeError> {
         // Get backup codes for user
         let row = client
-            .query_opt(
-                "SELECT id, codes FROM user_backup_codes WHERE user_id = $1",
-                &[&user_id],
-            )
+            .query_opt("SELECT id, codes FROM user_backup_codes WHERE user_id = $1", &[&user_id])
             .await
             .map_err(|e| BackupCodeError::DatabaseError(e.to_string()))?;
 
@@ -137,10 +131,7 @@ impl BackupCodeService {
         user_id: Uuid,
     ) -> Result<usize, BackupCodeError> {
         let row = client
-            .query_opt(
-                "SELECT codes FROM user_backup_codes WHERE user_id = $1",
-                &[&user_id],
-            )
+            .query_opt("SELECT codes FROM user_backup_codes WHERE user_id = $1", &[&user_id])
             .await
             .map_err(|e| BackupCodeError::DatabaseError(e.to_string()))?;
 
@@ -154,15 +145,9 @@ impl BackupCodeService {
     }
 
     /// Clear all backup codes for a user
-    pub async fn clear_codes(
-        client: &Client,
-        user_id: Uuid,
-    ) -> Result<(), BackupCodeError> {
+    pub async fn clear_codes(client: &Client, user_id: Uuid) -> Result<(), BackupCodeError> {
         client
-            .execute(
-                "DELETE FROM user_backup_codes WHERE user_id = $1",
-                &[&user_id],
-            )
+            .execute("DELETE FROM user_backup_codes WHERE user_id = $1", &[&user_id])
             .await
             .map_err(|e| BackupCodeError::DatabaseError(e.to_string()))?;
 
