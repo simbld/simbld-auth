@@ -3,14 +3,11 @@
 //! This module provides WebAuthn capabilities for authenticating with security keys,
 //! biometrics, and platform authenticators like Windows Hello, Touch ID, etc.
 
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use webauthn_rs::{
-    prelude::*,
-    error::WebauthnError,
-};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use webauthn_rs::{error::WebauthnError, prelude::*};
 
 use crate::auth::mfa::MfaMethod;
 use crate::config::AppConfig;
@@ -109,30 +106,38 @@ impl WebAuthnProvider {
     pub fn new(config: &AppConfig) -> Result<Self, WebauthnError> {
         // Create a WebAuthn implementation with the proper configuration
         let rp_id = config.webauthn.rp_id.clone().unwrap_or_else(|| "example.com".to_string());
-        let rp_name = config.webauthn.rp_name.clone().unwrap_or_else(|| "Example Application".to_string());
-        let rp_origin = config.webauthn.rp_origin.clone().unwrap_or_else(|| "https://example.com".to_string());
+        let rp_name =
+            config.webauthn.rp_name.clone().unwrap_or_else(|| "Example Application".to_string());
+        let rp_origin =
+            config.webauthn.rp_origin.clone().unwrap_or_else(|| "https://example.com".to_string());
 
-        let builder = WebauthnBuilder::new(&rp_id, &rp_origin)?
-            .rp_name(&rp_name);
+        let builder = WebauthnBuilder::new(&rp_id, &rp_origin)?.rp_name(&rp_name);
 
         let webauthn = builder.build()?;
 
-        Ok(Self { webauthn })
+        Ok(Self {
+            webauthn,
+        })
     }
 
     /// Start registration for a new credential
-    pub async fn start_registration(&self, user_id: Uuid, username: &str, display_name: &str) -> Result<(Uuid, PublicKeyCredentialCreationOptions), ApiError> {
+    pub async fn start_registration(
+        &self,
+        user_id: Uuid,
+        username: &str,
+        display_name: &str,
+    ) -> Result<(Uuid, PublicKeyCredentialCreationOptions), ApiError> {
         // Generate registration options
         let user_id_bytes = user_id.as_bytes().to_vec();
         let exclude_credentials = self.get_existing_credential_descriptors(user_id).await?;
 
         // Start registration
-        let (state, options) = self.webauthn.start_passkey_registration(
-            user_id_bytes,
-            username,
-            display_name,
-            exclude_credentials,
-        ).map_err(|e| ApiError::new(500, format!("Failed to start WebAuthn registration: {}", e)))?;
+        let (state, options) = self
+            .webauthn
+            .start_passkey_registration(user_id_bytes, username, display_name, exclude_credentials)
+            .map_err(|e| {
+                ApiError::new(500, format!("Failed to start WebAuthn registration: {}", e))
+            })?;
 
         // Create challenge record
         let challenge_id = Uuid::new_v4();
@@ -170,7 +175,9 @@ impl WebAuthnProvider {
         }
 
         // Complete registration
-        let result = self.webauthn.finish_passkey_registration(response, &challenge.state)
+        let result = self
+            .webauthn
+            .finish_passkey_registration(response, &challenge.state)
             .map_err(|e| ApiError::new(400, format!("Invalid registration response: {}", e)))?;
 
         // Create credential record
@@ -198,17 +205,25 @@ impl WebAuthnProvider {
     }
 
     /// Start authentication with a credential
-    pub async fn start_authentication(&self, user_id: Uuid) -> Result<(Uuid, PublicKeyCredentialRequestOptions), ApiError> {
+    pub async fn start_authentication(
+        &self,
+        user_id: Uuid,
+    ) -> Result<(Uuid, PublicKeyCredentialRequestOptions), ApiError> {
         // Get user's credentials
         let allow_credentials = self.get_existing_credential_descriptors(user_id).await?;
 
         if allow_credentials.is_empty() {
-            return Err(ApiError::new(400, "No WebAuthn credentials registered for this user".to_string()));
+            return Err(ApiError::new(
+                400,
+                "No WebAuthn credentials registered for this user".to_string(),
+            ));
         }
 
         // Start authentication
-        let (state, options) = self.webauthn.start_passkey_authentication(allow_credentials)
-            .map_err(|e| ApiError::new(500, format!("Failed to start WebAuthn authentication: {}", e)))?;
+        let (state, options) =
+            self.webauthn.start_passkey_authentication(allow_credentials).map_err(|e| {
+                ApiError::new(500, format!("Failed to start WebAuthn authentication: {}", e))
+            })?;
 
         // Create challenge record
         let challenge_id = Uuid::new_v4();
@@ -248,15 +263,16 @@ impl WebAuthnProvider {
         let cred_id = base64::decode(&response.id)
             .map_err(|_| ApiError::new(400, "Invalid credential ID".to_string()))?;
 
-        let credential = self.get_credential_by_id(&cred_id).await?
+        let credential = self
+            .get_credential_by_id(&cred_id)
+            .await?
             .ok_or_else(|| ApiError::new(400, "Unknown credential".to_string()))?;
 
         // Complete authentication
-        let auth_result = self.webauthn.finish_passkey_authentication(
-            response,
-            &challenge.state,
-            credential.counter,
-        ).map_err(|e| ApiError::new(400, format!("Invalid authentication response: {}", e)))?;
+        let auth_result = self
+            .webauthn
+            .finish_passkey_authentication(response, &challenge.state, credential.counter)
+            .map_err(|e| ApiError::new(400, format!("Invalid authentication response: {}", e)))?;
 
         // Update credential counter
         self.update_credential_counter(&credential, auth_result.counter).await?;
@@ -268,21 +284,30 @@ impl WebAuthnProvider {
     }
 
     /// Get existing credential descriptors for a user
-    async fn get_existing_credential_descriptors(&self, user_id: Uuid) -> Result<Vec<CredentialDescriptor>, ApiError> {
+    async fn get_existing_credential_descriptors(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<CredentialDescriptor>, ApiError> {
         // In a real app, you would fetch credentials from your database
         // For this example, we return an empty list
         Ok(Vec::new())
     }
 
     /// Store a registration challenge (placeholder for actual DB implementation)
-    async fn store_registration_challenge(&self, challenge: &WebAuthnRegistrationChallenge) -> Result<(), ApiError> {
+    async fn store_registration_challenge(
+        &self,
+        challenge: &WebAuthnRegistrationChallenge,
+    ) -> Result<(), ApiError> {
         // In a real application, you would store the challenge in your database
         // For this example, we just pretend it's stored
         Ok(())
     }
 
     /// Get a registration challenge (placeholder for actual DB implementation)
-    async fn get_registration_challenge(&self, id: Uuid) -> Result<WebAuthnRegistrationChallenge, ApiError> {
+    async fn get_registration_challenge(
+        &self,
+        id: Uuid,
+    ) -> Result<WebAuthnRegistrationChallenge, ApiError> {
         // In a real application, you would retrieve the challenge from your database
         // For this example, we return an error since we don't have a real database
         Err(ApiError::new(404, "Challenge not found".to_string()))
@@ -296,14 +321,20 @@ impl WebAuthnProvider {
     }
 
     /// Store an authentication challenge (placeholder for actual DB implementation)
-    async fn store_authentication_challenge(&self, challenge: &WebAuthnAuthenticationChallenge) -> Result<(), ApiError> {
+    async fn store_authentication_challenge(
+        &self,
+        challenge: &WebAuthnAuthenticationChallenge,
+    ) -> Result<(), ApiError> {
         // In a real application, you would store the challenge in your database
         // For this example, we just pretend it's stored
         Ok(())
     }
 
     /// Get an authentication challenge (placeholder for actual DB implementation)
-    async fn get_authentication_challenge(&self, id: Uuid) -> Result<WebAuthnAuthenticationChallenge, ApiError> {
+    async fn get_authentication_challenge(
+        &self,
+        id: Uuid,
+    ) -> Result<WebAuthnAuthenticationChallenge, ApiError> {
         // In a real application, you would retrieve the challenge from your database
         // For this example, we return an error since we don't have a real database
         Err(ApiError::new(404, "Challenge not found".to_string()))
@@ -324,14 +355,21 @@ impl WebAuthnProvider {
     }
 
     /// Get a credential by its ID (placeholder for actual DB implementation)
-    async fn get_credential_by_id(&self, credential_id: &[u8]) -> Result<Option<WebAuthnCredential>, ApiError> {
+    async fn get_credential_by_id(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<WebAuthnCredential>, ApiError> {
         // In a real application, you would retrieve the credential from your database
         // For this example, we return None since we don't have a real database
         Ok(None)
     }
 
     /// Update a credential's counter (placeholder for actual DB implementation)
-    async fn update_credential_counter(&self, credential: &WebAuthnCredential, new_counter: u32) -> Result<(), ApiError> {
+    async fn update_credential_counter(
+        &self,
+        credential: &WebAuthnCredential,
+        new_counter: u32,
+    ) -> Result<(), ApiError> {
         // In a real application, you would update the credential in your database
         // For this example, we just pretend it's updated
         Ok(())
@@ -352,14 +390,21 @@ impl WebAuthnProvider {
     }
 
     /// Get all credentials for a user
-    pub async fn get_user_credentials(&self, user_id: Uuid) -> Result<Vec<WebAuthnCredential>, ApiError> {
+    pub async fn get_user_credentials(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<WebAuthnCredential>, ApiError> {
         // In a real application, you would retrieve credentials from your database
         // For this example, we return an empty list since we don't have a real database
         Ok(Vec::new())
     }
 
     /// Delete a credential
-    pub async fn delete_credential(&self, credential_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
+    pub async fn delete_credential(
+        &self,
+        credential_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), ApiError> {
         // In a real application, you would delete the credential from your database
         // For this example, we just pretend it's deleted
 
@@ -381,7 +426,12 @@ impl MfaMethod for WebAuthnProvider {
         Ok(challenge_id.to_string())
     }
 
-    async fn complete_verification(&self, _user_id: Uuid, verification_id: &str, code: &str) -> Result<bool, ApiError> {
+    async fn complete_verification(
+        &self,
+        _user_id: Uuid,
+        verification_id: &str,
+        code: &str,
+    ) -> Result<bool, ApiError> {
         // Convert verification ID from string to UUID
         let challenge_id = Uuid::parse_str(verification_id)
             .map_err(|_| ApiError::new(400, "Invalid verification ID".to_string()))?;
@@ -427,8 +477,9 @@ mod tests {
         let credential_id = CredentialID::from(vec![1, 2, 3, 4]);
         let public_key = PublicKeyCredential::from_es256_key(
             vec![5, 6, 7, 8],
-            ES256Key::from_pkcs8(&vec![9, 10, 11, 12]).unwrap()
-        ).unwrap();
+            ES256Key::from_pkcs8(&vec![9, 10, 11, 12]).unwrap(),
+        )
+        .unwrap();
 
         let credential = WebAuthnCredential {
             id: Uuid::new_v4(),
@@ -467,10 +518,7 @@ mod tests {
         let user_entity = webauthn_rs::prelude::UserVerificationPolicy::Required;
 
         // Create a registration state (simplified for test)
-        let registration_state = PasskeyRegistration::new(
-            user_entity,
-            challenge,
-        );
+        let registration_state = PasskeyRegistration::new(user_entity, challenge);
 
         let challenge = WebAuthnRegistrationChallenge {
             id: challenge_id,
@@ -498,18 +546,13 @@ mod tests {
         let challenge = Challenge::new(vec![1, 2, 3, 4]);
 
         // Create allowed credentials
-        let allowed_credentials = vec![
-            CredentialDescriptor {
-                cred_id: CredentialID::from(vec![5, 6, 7, 8]),
-                transports: None,
-            }
-        ];
+        let allowed_credentials = vec![CredentialDescriptor {
+            cred_id: CredentialID::from(vec![5, 6, 7, 8]),
+            transports: None,
+        }];
 
         // Create an authentication state (simplified for test)
-        let authentication_state = PasskeyAuthentication::new(
-            challenge,
-            allowed_credentials,
-        );
+        let authentication_state = PasskeyAuthentication::new(challenge, allowed_credentials);
 
         let challenge = WebAuthnAuthenticationChallenge {
             id: challenge_id,
@@ -532,11 +575,10 @@ mod tests {
         let rp_id = "example.com".to_string();
         let rp_origin = url::Url::parse("https://example.com").unwrap();
 
-        let builder = WebauthnBuilder::new(rp_id, &rp_origin)
-            .expect("Failed to create WebauthnBuilder");
+        let builder =
+            WebauthnBuilder::new(rp_id, &rp_origin).expect("Failed to create WebauthnBuilder");
 
-        let webauthn = builder.build()
-            .expect("Failed to build Webauthn");
+        let webauthn = builder.build().expect("Failed to build Webauthn");
 
         let provider = WebAuthnProvider {
             webauthn,
@@ -563,10 +605,7 @@ mod tests {
         let user_entity = webauthn_rs::prelude::UserVerificationPolicy::Required;
 
         // Create a registration state
-        let registration_state = PasskeyRegistration::new(
-            user_entity,
-            challenge,
-        );
+        let registration_state = PasskeyRegistration::new(user_entity, challenge);
 
         let expired_challenge = WebAuthnRegistrationChallenge {
             id: challenge_id,
@@ -587,11 +626,10 @@ mod tests {
         let rp_id = "example.com".to_string();
         let rp_origin = url::Url::parse("https://example.com").unwrap();
 
-        let builder = WebauthnBuilder::new(rp_id, &rp_origin)
-            .expect("Failed to create WebauthnBuilder");
+        let builder =
+            WebauthnBuilder::new(rp_id, &rp_origin).expect("Failed to create WebauthnBuilder");
 
-        let webauthn = builder.build()
-            .expect("Failed to build Webauthn");
+        let webauthn = builder.build().expect("Failed to build Webauthn");
 
         let provider = WebAuthnProvider {
             webauthn,
