@@ -6,11 +6,11 @@
 
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
-use validator::Validate;
 use uuid::Uuid;
+use validator::Validate;
 
-use crate::auth::service::AuthService;
 use crate::auth::jwt::Claims;
+use crate::auth::service::AuthService;
 use crate::errors::ApiError;
 
 /// User registration request data structure
@@ -146,8 +146,13 @@ pub async fn login(
     db_pool: web::Data<deadpool_postgres::Pool>,
 ) -> Result<HttpResponse, ApiError> {
     // Get client information for session tracking
-    let user_agent = http_req.headers().get("User-Agent").map(|h| h.to_str().unwrap_or("unknown")).unwrap_or("unknown");
-    let ip_address = http_req.connection_info().realip_remote_addr().unwrap_or("unknown").to_string();
+    let user_agent = http_req
+        .headers()
+        .get("User-Agent")
+        .map(|h| h.to_str().unwrap_or("unknown"))
+        .unwrap_or("unknown");
+    let ip_address =
+        http_req.connection_info().realip_remote_addr().unwrap_or("unknown").to_string();
 
     // Authenticate the user
     let auth_result = auth_service.authenticate_user(&req.email, &req.password, &db_pool).await?;
@@ -161,7 +166,9 @@ pub async fn login(
     }
 
     // Generate tokens
-    let tokens = auth_service.generate_tokens(auth_result.user_id, &db_pool, ip_address, user_agent.to_string()).await?;
+    let tokens = auth_service
+        .generate_tokens(auth_result.user_id, &db_pool, ip_address, user_agent.to_string())
+        .await?;
 
     // Return the token response
     Ok(HttpResponse::Ok().json(TokenResponse {
@@ -183,14 +190,21 @@ pub async fn verify_mfa(
     db_pool: web::Data<deadpool_postgres::Pool>,
 ) -> Result<HttpResponse, ApiError> {
     // Get client information for session tracking
-    let user_agent = http_req.headers().get("User-Agent").map(|h| h.to_str().unwrap_or("unknown")).unwrap_or("unknown");
-    let ip_address = http_req.connection_info().realip_remote_addr().unwrap_or("unknown").to_string();
+    let user_agent = http_req
+        .headers()
+        .get("User-Agent")
+        .map(|h| h.to_str().unwrap_or("unknown"))
+        .unwrap_or("unknown");
+    let ip_address =
+        http_req.connection_info().realip_remote_addr().unwrap_or("unknown").to_string();
 
     // Verify MFA code
     auth_service.verify_mfa_code(req.user_id, &req.code, &db_pool).await?;
 
     // Generate tokens
-    let tokens = auth_service.generate_tokens(req.user_id, &db_pool, ip_address, user_agent.to_string()).await?;
+    let tokens = auth_service
+        .generate_tokens(req.user_id, &db_pool, ip_address, user_agent.to_string())
+        .await?;
 
     // Return the token response
     Ok(HttpResponse::Ok().json(TokenResponse {
@@ -309,12 +323,9 @@ pub async fn change_password(
     db_pool: web::Data<deadpool_postgres::Pool>,
 ) -> Result<HttpResponse, ApiError> {
     // Change the password
-    auth_service.change_password(
-        claims.sub,
-        &req.current_password,
-        &req.new_password,
-        &db_pool
-    ).await?;
+    auth_service
+        .change_password(claims.sub, &req.current_password, &req.new_password, &db_pool)
+        .await?;
 
     // Return success response
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -342,8 +353,8 @@ mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, web, App};
     use deadpool_postgres::{Config, Pool};
-    use mockall::predicate::*;
     use mockall::mock;
+    use mockall::predicate::*;
     use tokio_postgres::NoTls;
     use uuid::Uuid;
 
@@ -424,8 +435,9 @@ mod tests {
             App::new()
                 .app_data(web::Data::new(mock_auth_service))
                 .app_data(web::Data::new(create_mock_pool()))
-                .route("/register", web::post().to(register))
-        ).await;
+                .route("/register", web::post().to(register)),
+        )
+        .await;
 
         // Create test request
         let req = test::TestRequest::post()
@@ -456,17 +468,16 @@ mod tests {
             .returning(move |_, _, _| Ok((user_id, false)));
 
         // When MFA is not required, login should return tokens
-        mock_auth_service
-            .expect_verify_mfa()
-            .never();
+        mock_auth_service.expect_verify_mfa().never();
 
         // Create test app with routes
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(mock_auth_service))
                 .app_data(web::Data::new(create_mock_pool()))
-                .route("/login", web::post().to(login))
-        ).await;
+                .route("/login", web::post().to(login)),
+        )
+        .await;
 
         // Create test request
         let req = test::TestRequest::post()
@@ -500,8 +511,9 @@ mod tests {
             App::new()
                 .app_data(web::Data::new(mock_auth_service))
                 .app_data(web::Data::new(create_mock_pool()))
-                .route("/login", web::post().to(login))
-        ).await;
+                .route("/login", web::post().to(login)),
+        )
+        .await;
 
         // Create test request
         let req = test::TestRequest::post()
@@ -531,25 +543,23 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         // Set up expectations
-        mock_auth_service
-            .expect_verify_mfa()
-            .with(eq(user_id), eq("123456"))
-            .returning(|_, _| {
-                Ok(TokenResponse {
-                    access_token: "access_token".to_string(),
-                    refresh_token: "refresh_token".to_string(),
-                    token_type: "Bearer".to_string(),
-                    expires_in: 3600,
-                })
-            });
+        mock_auth_service.expect_verify_mfa().with(eq(user_id), eq("123456")).returning(|_, _| {
+            Ok(TokenResponse {
+                access_token: "access_token".to_string(),
+                refresh_token: "refresh_token".to_string(),
+                token_type: "Bearer".to_string(),
+                expires_in: 3600,
+            })
+        });
 
         // Create test app with routes
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(mock_auth_service))
                 .app_data(web::Data::new(create_mock_pool()))
-                .route("/verify-mfa", web::post().to(verify_mfa))
-        ).await;
+                .route("/verify-mfa", web::post().to(verify_mfa)),
+        )
+        .await;
 
         // Create test request
         let req = test::TestRequest::post()
@@ -578,25 +588,23 @@ mod tests {
         let mut mock_auth_service = MockAuthService::new();
 
         // Set up expectations
-        mock_auth_service
-            .expect_refresh_token()
-            .with(eq("old_refresh_token"))
-            .returning(|_| {
-                Ok(TokenResponse {
-                    access_token: "new_access_token".to_string(),
-                    refresh_token: "new_refresh_token".to_string(),
-                    token_type: "Bearer".to_string(),
-                    expires_in: 3600,
-                })
-            });
+        mock_auth_service.expect_refresh_token().with(eq("old_refresh_token")).returning(|_| {
+            Ok(TokenResponse {
+                access_token: "new_access_token".to_string(),
+                refresh_token: "new_refresh_token".to_string(),
+                token_type: "Bearer".to_string(),
+                expires_in: 3600,
+            })
+        });
 
         // Create test app with routes
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(mock_auth_service))
                 .app_data(web::Data::new(create_mock_pool()))
-                .route("/refresh", web::post().to(refresh_token))
-        ).await;
+                .route("/refresh", web::post().to(refresh_token)),
+        )
+        .await;
 
         // Create test request
         let req = test::TestRequest::post()
@@ -618,18 +626,16 @@ mod tests {
         let mut mock_auth_service = MockAuthService::new();
 
         // Set up expectations
-        mock_auth_service
-            .expect_logout()
-            .with(eq("refresh_token"))
-            .returning(|_| Ok(()));
+        mock_auth_service.expect_logout().with(eq("refresh_token")).returning(|_| Ok(()));
 
         // Create test app with routes
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(mock_auth_service))
                 .app_data(web::Data::new(create_mock_pool()))
-                .route("/logout", web::post().to(logout))
-        ).await;
+                .route("/logout", web::post().to(logout)),
+        )
+        .await;
 
         // Create test request
         let req = test::TestRequest::post()
