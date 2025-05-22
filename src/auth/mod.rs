@@ -4,25 +4,25 @@
 //! including password management, multi-factor authentication,
 //! session management, and token handling.
 
-pub mod password;
-pub mod mfa;
-pub mod session;
 pub mod dto;
 pub mod handlers;
-pub mod service;
-pub mod models;
 pub mod jwt;
-pub mod oauth;
+pub mod mfa;
 pub mod middleware;
+pub mod models;
+pub mod oauth;
+pub mod password;
+pub mod service;
+pub mod session;
 
 use deadpool_postgres::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::users::User;
 use self::mfa::{MfaError, MfaService, MfaStatus, MfaType};
 use self::password::PasswordError;
+use crate::users::User;
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -105,7 +105,8 @@ impl AuthService {
         Self::reset_failed_login_attempts(client, user.id).await?;
 
         // Vérifier si MFA est requis
-        let mfa_status = MfaService::get_mfa_status(client, user.id).await
+        let mfa_status = MfaService::get_mfa_status(client, user.id)
+            .await
             .map_err(|e| AuthError::MfaError(e))?;
 
         let requires_mfa = mfa_status.totp_enabled || mfa_status.webauthn_enabled;
@@ -146,7 +147,8 @@ impl AuthService {
         code: &str,
     ) -> Result<AuthResult, AuthError> {
         // Vérifier le code MFA
-        let verified = MfaService::verify_authentication(client, user_id, mfa_type, code).await
+        let verified = MfaService::verify_authentication(client, user_id, mfa_type, code)
+            .await
             .map_err(|e| AuthError::MfaError(e))?;
 
         if !verified {
@@ -193,20 +195,14 @@ impl AuthService {
     }
 
     /// Gérer une tentative de connexion échouée
-    async fn handle_failed_login_attempt(
-        client: &Client,
-        user_id: Uuid,
-    ) -> Result<(), AuthError> {
+    async fn handle_failed_login_attempt(client: &Client, user_id: Uuid) -> Result<(), AuthError> {
         // À implémenter: incrémenter le compteur de tentatives et verrouiller si nécessaire
         // Ceci est un emplacement pour une future implémentation
         Ok(())
     }
 
     /// Réinitialiser les tentatives de connexion échouées
-    async fn reset_failed_login_attempts(
-        client: &Client,
-        user_id: Uuid,
-    ) -> Result<(), AuthError> {
+    async fn reset_failed_login_attempts(client: &Client, user_id: Uuid) -> Result<(), AuthError> {
         // À implémenter: réinitialiser le compteur de tentatives
         // Ceci est un emplacement pour une future implémentation
         Ok(())
