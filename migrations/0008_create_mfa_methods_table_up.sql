@@ -10,3 +10,7 @@ CREATE TABLE IF NOT EXISTS mfa_methods (
 );
 
 CREATE INDEX mfa_methods_user_id_idx ON mfa_methods(user_id);
+
+ALTER TABLE mfa_methods ADD COLUMN IF NOT EXISTS secret VARCHAR(255);
+ALTER TABLE mfa_methods ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE mfa_methods ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP WITH TIME ZONE;
