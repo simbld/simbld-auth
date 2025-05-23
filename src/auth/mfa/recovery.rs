@@ -3,12 +3,12 @@
 //! This module provides recovery codes for when users lose access to their MFA devices.
 //! It generates, stores, and validates recovery codes.
 
-use rand::{Rng, distributions::Alphanumeric};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use argon2::{self, Config as Argon2Config};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use argon2::{self, Config as Argon2Config};
+use rand::{distributions::Alphanumeric, Rng};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::auth::mfa::MfaMethod;
 use crate::config::AppConfig;
@@ -126,7 +126,11 @@ impl RecoveryCodeProvider {
     /// Generate a single recovery code
     fn generate_single_code(&self) -> String {
         let mut rng = rand::thread_rng();
-        let chunk_size = if self.use_separators { 4 } else { self.code_length };
+        let chunk_size = if self.use_separators {
+            4
+        } else {
+            self.code_length
+        };
         let num_chunks = (self.code_length + chunk_size - 1) / chunk_size;
 
         let mut code = String::new();
@@ -141,20 +145,20 @@ impl RecoveryCodeProvider {
 
             // Generate chunk based on chosen character set
             let chunk = match self.character_set {
-                RecoveryCodeCharset::AlphaUpper => {
-                    (0..remaining).map(|_| {
+                RecoveryCodeCharset::AlphaUpper => (0..remaining)
+                    .map(|_| {
                         let idx = rng.gen_range(0..26);
                         (b'A' + idx) as char
-                    }).collect::<String>()
-                },
-                RecoveryCodeCharset::AlphaLower => {
-                    (0..remaining).map(|_| {
+                    })
+                    .collect::<String>(),
+                RecoveryCodeCharset::AlphaLower => (0..remaining)
+                    .map(|_| {
                         let idx = rng.gen_range(0..26);
                         (b'a' + idx) as char
-                    }).collect::<String>()
-                },
-                RecoveryCodeCharset::AlphaMixed => {
-                    (0..remaining).map(|_| {
+                    })
+                    .collect::<String>(),
+                RecoveryCodeCharset::AlphaMixed => (0..remaining)
+                    .map(|_| {
                         if rng.gen_bool(0.5) {
                             let idx = rng.gen_range(0..26);
                             (b'A' + idx) as char
@@ -162,18 +166,14 @@ impl RecoveryCodeProvider {
                             let idx = rng.gen_range(0..26);
                             (b'a' + idx) as char
                         }
-                    }).collect::<String>()
-                },
-                RecoveryCodeCharset::Numeric => {
-                    (0..remaining).map(|_| {
-                        char::from_digit(rng.gen_range(0..10), 10).unwrap()
-                    }).collect::<String>()
-                },
+                    })
+                    .collect::<String>(),
+                RecoveryCodeCharset::Numeric => (0..remaining)
+                    .map(|_| char::from_digit(rng.gen_range(0..10), 10).unwrap())
+                    .collect::<String>(),
                 RecoveryCodeCharset::Alphanumeric => {
-                    (0..remaining).map(|_| {
-                        rng.sample(Alphanumeric) as char
-                    }).collect::<String>()
-                }
+                    (0..remaining).map(|_| rng.sample(Alphanumeric) as char).collect::<String>()
+                },
             };
 
             code.push_str(&chunk);
@@ -232,11 +232,8 @@ impl RecoveryCodeProvider {
     fn hash_code(&self, code: &str) -> Result<String, ApiError> {
         let salt = rand::thread_rng().gen::<[u8; 32]>();
 
-        argon2::hash_encoded(
-            code.as_bytes(),
-            &salt,
-            &self.argon2_config
-        ).map_err(|e| ApiError::new(500, format!("Failed to hash recovery code: {}", e)))
+        argon2::hash_encoded(code.as_bytes(), &salt, &self.argon2_config)
+            .map_err(|e| ApiError::new(500, format!("Failed to hash recovery code: {}", e)))
     }
 
     /// Verify a recovery code
@@ -262,7 +259,10 @@ impl RecoveryCodeProvider {
     }
 
     /// Get recovery code settings for a user
-    pub async fn get_settings(&self, user_id: Uuid) -> Result<Option<RecoveryCodeSettings>, ApiError> {
+    pub async fn get_settings(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<RecoveryCodeSettings>, ApiError> {
         // In a real application, you would retrieve these settings from your database
         // For this example, we return None
         Ok(None)
@@ -304,7 +304,12 @@ impl MfaMethod for RecoveryCodeProvider {
         Ok("recovery_verification".to_string())
     }
 
-    async fn complete_verification(&self, user_id: Uuid, _verification_id: &str, code: &str) -> Result<bool, ApiError> {
+    async fn complete_verification(
+        &self,
+        user_id: Uuid,
+        _verification_id: &str,
+        code: &str,
+    ) -> Result<bool, ApiError> {
         // Verify the recovery code
         self.verify_code(user_id, code).await
     }
@@ -312,169 +317,168 @@ impl MfaMethod for RecoveryCodeProvider {
     fn get_method_name(&self) -> &'static str {
         "recovery_code"
     }
-
 }
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use std::sync::{Arc, Mutex};
-        use chrono::Utc;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::sync::{Arc, Mutex};
 
-        // Test the recovery code provider creation
-        #[test]
-        fn test_recovery_provider_creation() {
-            let provider = RecoveryCodeProvider {
-                code_count: 10,
-                code_length: 8,
-                use_separators: true,
-                character_set: RecoveryCodeCharset::Alphanumeric,
-                argon2_config: Argon2Config {
-                    variant: argon2::Variant::Argon2id,
-                    version: argon2::Version::V0x13,
-                    mem_cost: 16 * 1024,
-                    time_cost: 3,
-                    lanes: 4,
-                    secret: &[],
-                    ad: &[],
-                    hash_length: 32,
-                },
-            };
+    // Test the recovery code provider creation
+    #[test]
+    fn test_recovery_provider_creation() {
+        let provider = RecoveryCodeProvider {
+            code_count: 10,
+            code_length: 8,
+            use_separators: true,
+            character_set: RecoveryCodeCharset::Alphanumeric,
+            argon2_config: Argon2Config {
+                variant: argon2::Variant::Argon2id,
+                version: argon2::Version::V0x13,
+                mem_cost: 16 * 1024,
+                time_cost: 3,
+                lanes: 4,
+                secret: &[],
+                ad: &[],
+                hash_length: 32,
+            },
+        };
 
-            assert_eq!(provider.code_count, 10);
-            assert_eq!(provider.code_length, 8);
-            assert!(provider.use_separators);
-        }
+        assert_eq!(provider.code_count, 10);
+        assert_eq!(provider.code_length, 8);
+        assert!(provider.use_separators);
+    }
 
-        // Test the method name
-        #[test]
-        fn test_method_name() {
-            let provider = RecoveryCodeProvider {
-                code_count: 10,
-                code_length: 8,
-                use_separators: true,
-                character_set: RecoveryCodeCharset::Alphanumeric,
-                argon2_config: Argon2Config {
-                    variant: argon2::Variant::Argon2id,
-                    version: argon2::Version::V0x13,
-                    mem_cost: 16 * 1024,
-                    time_cost: 3,
-                    lanes: 4,
-                    secret: &[],
-                    ad: &[],
-                    hash_length: 32,
-                },
-            };
+    // Test the method name
+    #[test]
+    fn test_method_name() {
+        let provider = RecoveryCodeProvider {
+            code_count: 10,
+            code_length: 8,
+            use_separators: true,
+            character_set: RecoveryCodeCharset::Alphanumeric,
+            argon2_config: Argon2Config {
+                variant: argon2::Variant::Argon2id,
+                version: argon2::Version::V0x13,
+                mem_cost: 16 * 1024,
+                time_cost: 3,
+                lanes: 4,
+                secret: &[],
+                ad: &[],
+                hash_length: 32,
+            },
+        };
 
-            assert_eq!(provider.get_method_name(), "recovery");
-        }
+        assert_eq!(provider.get_method_name(), "recovery");
+    }
 
-        // Test single code generation
-        #[test]
-        fn test_generate_single_code() {
-            let provider = RecoveryCodeProvider {
-                code_count: 10,
-                code_length: 8,
-                use_separators: false,
-                character_set: RecoveryCodeCharset::Alphanumeric,
-                argon2_config: Argon2Config {
-                    variant: argon2::Variant::Argon2id,
-                    version: argon2::Version::V0x13,
-                    mem_cost: 16 * 1024,
-                    time_cost: 3,
-                    lanes: 4,
-                    secret: &[],
-                    ad: &[],
-                    hash_length: 32,
-                },
-            };
+    // Test single code generation
+    #[test]
+    fn test_generate_single_code() {
+        let provider = RecoveryCodeProvider {
+            code_count: 10,
+            code_length: 8,
+            use_separators: false,
+            character_set: RecoveryCodeCharset::Alphanumeric,
+            argon2_config: Argon2Config {
+                variant: argon2::Variant::Argon2id,
+                version: argon2::Version::V0x13,
+                mem_cost: 16 * 1024,
+                time_cost: 3,
+                lanes: 4,
+                secret: &[],
+                ad: &[],
+                hash_length: 32,
+            },
+        };
 
-            let code = provider.generate_single_code();
+        let code = provider.generate_single_code();
 
-            // Check code length
-            assert_eq!(code.len(), 8);
+        // Check code length
+        assert_eq!(code.len(), 8);
 
-            // Check that the code contains only alphanumeric characters
-            for c in code.chars() {
-                assert!(c.is_alphanumeric(), "Character '{}' is not alphanumeric", c);
-            }
-        }
-
-        // Test code generation with separators
-        #[test]
-        fn test_generate_code_with_separators() {
-            let provider = RecoveryCodeProvider {
-                code_count: 10,
-                code_length: 8,
-                use_separators: true,
-                character_set: RecoveryCodeCharset::Alphanumeric,
-                argon2_config: Argon2Config {
-                    variant: argon2::Variant::Argon2id,
-                    version: argon2::Version::V0x13,
-                    mem_cost: 16 * 1024,
-                    time_cost: 3,
-                    lanes: 4,
-                    secret: &[],
-                    ad: &[],
-                    hash_length: 32,
-                },
-            };
-
-            let code = provider.generate_single_code();
-
-            // Check that the code has separators (length should be greater with separators)
-            assert!(code.len() > 8, "Code should have separators");
-
-            // Check that the code contains separators (dashes or spaces)
-            assert!(code.contains('-') || code.contains(' '), "Code should contain separators");
-        }
-
-        // Test code hashing
-        #[test]
-        fn test_hash_code() {
-            let provider = RecoveryCodeProvider {
-                code_count: 10,
-                code_length: 8,
-                use_separators: true,
-                character_set: RecoveryCodeCharset::Alphanumeric,
-                argon2_config: Argon2Config {
-                    variant: argon2::Variant::Argon2id,
-                    version: argon2::Version::V0x13,
-                    mem_cost: 16 * 1024,
-                    time_cost: 3,
-                    lanes: 4,
-                    secret: &[],
-                    ad: &[],
-                    hash_length: 32,
-                },
-            };
-
-            let code = "ABCD1234";
-            let hash_result = provider.hash_code(code);
-
-            // Hash function should succeed
-            assert!(hash_result.is_ok());
-
-            // Resulting hash should be a non-empty string
-            let hash = hash_result.unwrap();
-            assert!(!hash.is_empty());
-
-            // Hash should be different from the original code
-            assert_ne!(hash, code);
-        }
-
-        // Test recovery code settings
-        #[test]
-        fn test_recovery_code_settings() {
-            let user_id = Uuid::new_v4();
-            let settings = RecoveryCodeSettings {
-                user_id,
-                enabled: true,
-                remaining_codes: 8,
-                last_generated: Utc::now(),
-            };
-
-            assert_eq!(settings.user_id, user_id);
-            assert!(settings.enabled);
-            assert_eq!(settings.remaining_codes, 8);
+        // Check that the code contains only alphanumeric characters
+        for c in code.chars() {
+            assert!(c.is_alphanumeric(), "Character '{}' is not alphanumeric", c);
         }
     }
+
+    // Test code generation with separators
+    #[test]
+    fn test_generate_code_with_separators() {
+        let provider = RecoveryCodeProvider {
+            code_count: 10,
+            code_length: 8,
+            use_separators: true,
+            character_set: RecoveryCodeCharset::Alphanumeric,
+            argon2_config: Argon2Config {
+                variant: argon2::Variant::Argon2id,
+                version: argon2::Version::V0x13,
+                mem_cost: 16 * 1024,
+                time_cost: 3,
+                lanes: 4,
+                secret: &[],
+                ad: &[],
+                hash_length: 32,
+            },
+        };
+
+        let code = provider.generate_single_code();
+
+        // Check that the code has separators (length should be greater with separators)
+        assert!(code.len() > 8, "Code should have separators");
+
+        // Check that the code contains separators (dashes or spaces)
+        assert!(code.contains('-') || code.contains(' '), "Code should contain separators");
+    }
+
+    // Test code hashing
+    #[test]
+    fn test_hash_code() {
+        let provider = RecoveryCodeProvider {
+            code_count: 10,
+            code_length: 8,
+            use_separators: true,
+            character_set: RecoveryCodeCharset::Alphanumeric,
+            argon2_config: Argon2Config {
+                variant: argon2::Variant::Argon2id,
+                version: argon2::Version::V0x13,
+                mem_cost: 16 * 1024,
+                time_cost: 3,
+                lanes: 4,
+                secret: &[],
+                ad: &[],
+                hash_length: 32,
+            },
+        };
+
+        let code = "ABCD1234";
+        let hash_result = provider.hash_code(code);
+
+        // Hash function should succeed
+        assert!(hash_result.is_ok());
+
+        // Resulting hash should be a non-empty string
+        let hash = hash_result.unwrap();
+        assert!(!hash.is_empty());
+
+        // Hash should be different from the original code
+        assert_ne!(hash, code);
+    }
+
+    // Test recovery code settings
+    #[test]
+    fn test_recovery_code_settings() {
+        let user_id = Uuid::new_v4();
+        let settings = RecoveryCodeSettings {
+            user_id,
+            enabled: true,
+            remaining_codes: 8,
+            last_generated: Utc::now(),
+        };
+
+        assert_eq!(settings.user_id, user_id);
+        assert!(settings.enabled);
+        assert_eq!(settings.remaining_codes, 8);
+    }
+}
