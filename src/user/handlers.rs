@@ -14,16 +14,12 @@ use uuid::Uuid;
 
 use crate::{
     auth::Claims,
-    common::{
-        api_response::ApiResponse,
-        error::AppError,
-    },
+    common::{api_response::ApiResponse, error::AppError},
     user::{
         dto::{
             AssignRoleDto, ChangePasswordDto, DetailedUserResponseDto, ListUsersQuery,
-            LoginUserDto, OAuthUserDto, PasswordResetDto, PasswordResetRequestDto,
-            RegisterUserDto, TokenResponseDto, UpdateProfileDto, UserResponseDto,
-            UserStatsDto, VerifyEmailDto,
+            LoginUserDto, OAuthUserDto, PasswordResetDto, PasswordResetRequestDto, RegisterUserDto,
+            TokenResponseDto, UpdateProfileDto, UserResponseDto, UserStatsDto, VerifyEmailDto,
         },
         service::UserService,
     },
@@ -107,8 +103,8 @@ pub async fn get_user_by_id(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<ApiResponse<DetailedUserResponseDto>, AppError> {
-    let user_id = Uuid::parse_str(&id)
-        .map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
+    let user_id =
+        Uuid::parse_str(&id).map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
 
     let user = state.user_service.get_user_by_id(user_id).await?;
     Ok(ApiResponse::ok(user.into()))
@@ -122,8 +118,8 @@ pub async fn delete_user(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<ApiResponse<()>, AppError> {
-    let user_id = Uuid::parse_str(&id)
-        .map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
+    let user_id =
+        Uuid::parse_str(&id).map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
 
     state.user_service.delete_user(user_id).await?;
     Ok(ApiResponse::ok(()))
@@ -159,8 +155,8 @@ pub async fn assign_role(
     Path(id): Path<String>,
     WithRejection(Json(payload), _): WithRejection<Json<AssignRoleDto>, AppError>,
 ) -> Result<ApiResponse<()>, AppError> {
-    let user_id = Uuid::parse_str(&id)
-        .map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
+    let user_id =
+        Uuid::parse_str(&id).map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
 
     state.user_service.assign_role(user_id, &payload.role).await?;
     Ok(ApiResponse::ok(()))
@@ -173,8 +169,8 @@ pub async fn get_user_roles(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<ApiResponse<Vec<String>>, AppError> {
-    let user_id = Uuid::parse_str(&id)
-        .map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
+    let user_id =
+        Uuid::parse_str(&id).map_err(|_| AppError::invalid_request("Invalid user ID format"))?;
 
     let roles = state.user_service.get_user_roles(user_id).await?;
     Ok(ApiResponse::ok(roles))
@@ -189,7 +185,8 @@ pub async fn oauth_callback(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<ApiResponse<TokenResponseDto>, AppError> {
     // Extract the authorization code from query parameters
-    let code = params.get("code")
+    let code = params
+        .get("code")
         .ok_or_else(|| AppError::invalid_request("Missing authorization code"))?;
 
     // Process OAuth login
@@ -296,14 +293,8 @@ pub async fn refresh_token(
 mod tests {
     use super::*;
     use crate::{
-        auth::{
-            jwt::JwtManager,
-            role::UserRole,
-        },
-        user::{
-            repository::MockUserRepository,
-            service::UserServiceImpl,
-        },
+        auth::{jwt::JwtManager, role::UserRole},
+        user::{repository::MockUserRepository, service::UserServiceImpl},
     };
     use axum::{
         body::Body,
@@ -381,14 +372,11 @@ mod tests {
                     "email": "test@example.com",
                     "password": "password123"
                 })
-                    .to_string(),
+                .to_string(),
             ))
             .unwrap();
 
-        let response = app
-            .oneshot(request)
-            .await
-            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
 
@@ -422,12 +410,10 @@ mod tests {
         }
 
         // Create a JWT token for the user
-        let token = state.jwt_manager.create_token(
-            user_id,
-            &user.username,
-            &user.email,
-            vec![UserRole::User],
-        ).unwrap();
+        let token = state
+            .jwt_manager
+            .create_token(user_id, &user.username, &user.email, vec![UserRole::User])
+            .unwrap();
 
         let app = create_test_router(state);
 
@@ -438,10 +424,7 @@ mod tests {
             .body(Body::empty())
             .unwrap();
 
-        let response = app
-            .oneshot(request)
-            .await
-            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
 
