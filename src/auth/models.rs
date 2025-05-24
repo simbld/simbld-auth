@@ -3,9 +3,18 @@
 //! This module defines the data models used in the authentication system.
 //! These models represent users, tokens, sessions, and other related entities.
 
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Represents the type of Multi-Factor Authentication (MFA)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MfaType {
+    Totp,
+    WebAuthn,
+    BackupCode,
+    Sms,
+}
 
 /// Represents a user in the system
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,7 +86,6 @@ pub struct Session {
 
     /// Timestamp when the session was created
     pub created_at: DateTime<Utc>,
-
 }
 
 impl Session {
@@ -190,7 +198,8 @@ mod tests {
         let serialized = serde_json::to_string(&user).expect("Failed to serialize User");
 
         // Deserialize back to User
-        let deserialized: User = serde_json::from_str(&serialized).expect("Failed to deserialize User");
+        let deserialized: User =
+            serde_json::from_str(&serialized).expect("Failed to deserialize User");
 
         // Verify the round trip
         assert_eq!(user.id, deserialized.id);
@@ -222,10 +231,12 @@ mod tests {
         };
 
         // Serialize to JSON
-        let serialized = serde_json::to_string(&refresh_token).expect("Failed to serialize RefreshToken");
+        let serialized =
+            serde_json::to_string(&refresh_token).expect("Failed to serialize RefreshToken");
 
         // Deserialize back to RefreshToken
-        let deserialized: RefreshToken = serde_json::from_str(&serialized).expect("Failed to deserialize RefreshToken");
+        let deserialized: RefreshToken =
+            serde_json::from_str(&serialized).expect("Failed to deserialize RefreshToken");
 
         // Verify the round trip
         assert_eq!(refresh_token.id, deserialized.id);
@@ -263,7 +274,8 @@ mod tests {
         let serialized = serde_json::to_string(&session).expect("Failed to serialize Session");
 
         // Deserialize back to Session
-        let deserialized: Session = serde_json::from_str(&serialized).expect("Failed to deserialize Session");
+        let deserialized: Session =
+            serde_json::from_str(&serialized).expect("Failed to deserialize Session");
 
         // Verify the round trip
         assert_eq!(session.id, deserialized.id);
@@ -327,8 +339,8 @@ mod tests {
             user_id: Uuid::new_v4(),
             ip_address: "192.168.1.1".to_string(),
             user_agent: "Test Agent".to_string(),
-            expires_at: future_time,  // Even with future expiration
-            is_revoked: true,         // But it's revoked
+            expires_at: future_time, // Even with future expiration
+            is_revoked: true,        // But it's revoked
             last_activity: Utc::now(),
             created_at: Utc::now() - Duration::days(1),
         };
@@ -352,7 +364,8 @@ mod tests {
         let serialized = serde_json::to_string(&mfa_setup).expect("Failed to serialize MfaSetup");
 
         // Deserialize back to MfaSetup
-        let deserialized: MfaSetup = serde_json::from_str(&serialized).expect("Failed to deserialize MfaSetup");
+        let deserialized: MfaSetup =
+            serde_json::from_str(&serialized).expect("Failed to deserialize MfaSetup");
 
         // Verify the round trip
         assert_eq!(mfa_setup.id, deserialized.id);
@@ -377,7 +390,8 @@ mod tests {
             let serialized = serde_json::to_string(&role).expect("Failed to serialize Role");
 
             // Deserialize back to Role
-            let deserialized: Role = serde_json::from_str(&serialized).expect("Failed to deserialize Role");
+            let deserialized: Role =
+                serde_json::from_str(&serialized).expect("Failed to deserialize Role");
 
             // Verify the round trip
             assert_eq!(role, deserialized);
@@ -411,10 +425,12 @@ mod tests {
         };
 
         // Serialize to JSON
-        let serialized = serde_json::to_string(&successful_attempt).expect("Failed to serialize LoginAttempt");
+        let serialized =
+            serde_json::to_string(&successful_attempt).expect("Failed to serialize LoginAttempt");
 
         // Deserialize back to LoginAttempt
-        let deserialized: LoginAttempt = serde_json::from_str(&serialized).expect("Failed to deserialize LoginAttempt");
+        let deserialized: LoginAttempt =
+            serde_json::from_str(&serialized).expect("Failed to deserialize LoginAttempt");
 
         // Verify the round trip
         assert_eq!(successful_attempt.id, deserialized.id);
@@ -438,10 +454,12 @@ mod tests {
         };
 
         // Serialize to JSON
-        let serialized = serde_json::to_string(&failed_attempt).expect("Failed to serialize LoginAttempt");
+        let serialized =
+            serde_json::to_string(&failed_attempt).expect("Failed to serialize LoginAttempt");
 
         // Deserialize back to LoginAttempt
-        let deserialized: LoginAttempt = serde_json::from_str(&serialized).expect("Failed to deserialize LoginAttempt");
+        let deserialized: LoginAttempt =
+            serde_json::from_str(&serialized).expect("Failed to deserialize LoginAttempt");
 
         // Verify the round trip for failed attempt
         assert_eq!(failed_attempt.id, deserialized.id);
@@ -466,10 +484,12 @@ mod tests {
         };
 
         // Serialize to JSON
-        let serialized = serde_json::to_string(&password_reset).expect("Failed to serialize PasswordReset");
+        let serialized =
+            serde_json::to_string(&password_reset).expect("Failed to serialize PasswordReset");
 
         // Deserialize back to PasswordReset
-        let deserialized: PasswordReset = serde_json::from_str(&serialized).expect("Failed to deserialize PasswordReset");
+        let deserialized: PasswordReset =
+            serde_json::from_str(&serialized).expect("Failed to deserialize PasswordReset");
 
         // Verify the round trip
         assert_eq!(password_reset.id, deserialized.id);
@@ -527,7 +547,7 @@ mod tests {
         // Create session for user
         let session = Session {
             id: session_id,
-            user_id,  // Reference to user
+            user_id, // Reference to user
             ip_address: "192.168.1.1".to_string(),
             user_agent: "Test Agent".to_string(),
             expires_at: Utc::now() + Duration::days(7),
@@ -540,8 +560,8 @@ mod tests {
         let refresh_token = RefreshToken {
             id: Uuid::new_v4(),
             token: "refresh_token_123456".to_string(),
-            user_id,      // Reference to user
-            session_id,   // Reference to session
+            user_id,    // Reference to user
+            session_id, // Reference to session
             expires_at: Utc::now() + Duration::days(30),
             is_revoked: false,
             created_at: Utc::now(),
@@ -550,7 +570,7 @@ mod tests {
         // Create MFA setup for user
         let mfa_setup = MfaSetup {
             id: Uuid::new_v4(),
-            user_id,      // Reference to user
+            user_id, // Reference to user
             secret: "TOTP_SECRET_KEY".to_string(),
             is_verified: true,
             created_at: Utc::now(),
