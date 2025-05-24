@@ -3,11 +3,11 @@
 //! This module provides email-based verification for multi-factor authentication.
 //! It generates random codes, sends them via email, and verifies them.
 
-use std::time::{Duration, SystemTime};
+use async_trait::async_trait;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
-use async_trait::async_trait;
 
 use crate::auth::mfa::MfaMethod;
 use crate::config::AppConfig;
@@ -74,8 +74,16 @@ impl EmailMfaProvider {
             email_client,
             expiration_seconds: config.mfa.email_code_expiration_seconds.unwrap_or(600), // 10 minutes default
             code_length: config.mfa.email_code_length.unwrap_or(6),
-            email_subject: config.mfa.email_subject.clone().unwrap_or_else(|| "Your verification code".to_string()),
-            sender_email: config.mfa.sender_email.clone().unwrap_or_else(|| "noreply@example.com".to_string()),
+            email_subject: config
+                .mfa
+                .email_subject
+                .clone()
+                .unwrap_or_else(|| "Your verification code".to_string()),
+            sender_email: config
+                .mfa
+                .sender_email
+                .clone()
+                .unwrap_or_else(|| "noreply@example.com".to_string()),
         }
     }
 
@@ -120,12 +128,10 @@ impl EmailMfaProvider {
         );
 
         // Send email
-        self.email_client.send_email(
-            &self.sender_email,
-            email,
-            &self.email_subject,
-            &body,
-        ).await.map_err(|e| ApiError::new(500, format!("Failed to send email: {}", e)))?;
+        self.email_client
+            .send_email(&self.sender_email, email, &self.email_subject, &body)
+            .await
+            .map_err(|e| ApiError::new(500, format!("Failed to send email: {}", e)))?;
 
         Ok(id)
     }
@@ -179,7 +185,11 @@ impl EmailMfaProvider {
     }
 
     /// Create Email MFA settings for a user
-    pub async fn create_settings(&self, user_id: Uuid, email: &str) -> Result<EmailMfaSettings, ApiError> {
+    pub async fn create_settings(
+        &self,
+        user_id: Uuid,
+        email: &str,
+    ) -> Result<EmailMfaSettings, ApiError> {
         // In a real application, you would store these settings in your database
         // For this example, we just return the settings
         Ok(EmailMfaSettings {
@@ -216,8 +226,9 @@ impl EmailMfaProvider {
 impl MfaMethod for EmailMfaProvider {
     async fn initiate_verification(&self, user_id: Uuid) -> Result<String, ApiError> {
         // Get user's email from settings
-        let settings = self.get_settings(user_id).await?
-            .ok_or_else(|| ApiError::new(404, "Email MFA not configured for this user".to_string()))?;
+        let settings = self.get_settings(user_id).await?.ok_or_else(|| {
+            ApiError::new(404, "Email MFA not configured for this user".to_string())
+        })?;
 
         // Create verification
         let verification_id = self.create_verification(&settings.email).await?;
@@ -226,7 +237,12 @@ impl MfaMethod for EmailMfaProvider {
         Ok(verification_id.to_string())
     }
 
-    async fn complete_verification(&self, user_id: Uuid, verification_id: &str, code: &str) -> Result<bool, ApiError> {
+    async fn complete_verification(
+        &self,
+        user_id: Uuid,
+        verification_id: &str,
+        code: &str,
+    ) -> Result<bool, ApiError> {
         // Convert verification ID from string to UUID
         let verification_uuid = Uuid::parse_str(verification_id)
             .map_err(|_| ApiError::new(400, "Invalid verification ID".to_string()))?;
@@ -244,7 +260,13 @@ impl MfaMethod for EmailMfaProvider {
 #[async_trait]
 pub trait EmailClient: Send + Sync {
     /// Send an email message
-    async fn send_email(&self, from: &str, to: &str, subject: &str, body: &str) -> Result<(), String>;
+    async fn send_email(
+        &self,
+        from: &str,
+        to: &str,
+        subject: &str,
+        body: &str,
+    ) -> Result<(), String>;
 }
 
 /// SMTP email client implementation
@@ -277,13 +299,16 @@ impl SmtpEmailClient {
 
 #[async_trait]
 impl EmailClient for SmtpEmailClient {
-    async fn send_email(&self, from: &str, to: &str, subject: &str, body: &str) -> Result<(), String> {
+    async fn send_email(
+        &self,
+        from: &str,
+        to: &str,
+        subject: &str,
+        body: &str,
+    ) -> Result<(), String> {
         // In a real implementation, you would use a library like lettre to send emails
         // For this example, we just log the message
-        log::info!(
-            "Sending email from {} to {} with subject '{}': {}",
-            from, to, subject, body
-        );
+        log::info!("Sending email from {} to {} with subject '{}': {}", from, to, subject, body);
 
         Ok(())
     }
@@ -332,7 +357,13 @@ impl AwsSesEmailClient {
 
 #[async_trait]
 impl EmailClient for AwsSesEmailClient {
-    async fn send_email(&self, from: &str, to: &str, subject: &str, body: &str) -> Result<(), String> {
+    async fn send_email(
+        &self,
+        from: &str,
+        to: &str,
+        subject: &str,
+        body: &str,
+    ) -> Result<(), String> {
         // We need to clone self to mutate it within this async method
         let mut this = self.clone();
         this.init_client().await?;
@@ -340,24 +371,16 @@ impl EmailClient for AwsSesEmailClient {
         let client = this.client.as_ref().unwrap();
 
         // Create destination
-        let destination = aws_sdk_sesv2::model::Destination::builder()
-            .to_addresses(to)
-            .build();
+        let destination = aws_sdk_sesv2::model::Destination::builder().to_addresses(to).build();
 
         // Create email content
-        let subject_content = aws_sdk_sesv2::model::Content::builder()
-            .data(subject)
-            .charset("UTF-8")
-            .build();
+        let subject_content =
+            aws_sdk_sesv2::model::Content::builder().data(subject).charset("UTF-8").build();
 
-        let body_content = aws_sdk_sesv2::model::Content::builder()
-            .data(body)
-            .charset("UTF-8")
-            .build();
+        let body_content =
+            aws_sdk_sesv2::model::Content::builder().data(body).charset("UTF-8").build();
 
-        let message_body = aws_sdk_sesv2::model::Body::builder()
-            .text(body_content)
-            .build();
+        let message_body = aws_sdk_sesv2::model::Body::builder().text(body_content).build();
 
         let message = aws_sdk_sesv2::model::Message::builder()
             .subject(subject_content)
@@ -365,14 +388,11 @@ impl EmailClient for AwsSesEmailClient {
             .build();
 
         // Send email
-        let resp = client.send_email()
+        let resp = client
+            .send_email()
             .from_email_address(from)
             .destination(destination)
-            .content(
-                aws_sdk_sesv2::model::EmailContent::builder()
-                    .simple(message)
-                    .build()
-            )
+            .content(aws_sdk_sesv2::model::EmailContent::builder().simple(message).build())
             .send()
             .await
             .map_err(|e| format!("Failed to send email via AWS SES: {}", e))?;
@@ -394,58 +414,64 @@ impl Clone for AwsSesEmailClient {
     }
 }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use std::sync::{Arc, Mutex};
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
 
-        // Mock implementation of EmailClient for testing
-        #[derive(Clone)]
-        struct MockEmailClient {
-            sent_emails: Arc<Mutex<Vec<(String, String, String, String)>>>,
-        }
+    // Mock implementation of EmailClient for testing
+    #[derive(Clone)]
+    struct MockEmailClient {
+        sent_emails: Arc<Mutex<Vec<(String, String, String, String)>>>,
+    }
 
-        impl MockEmailClient {
-            fn new() -> Self {
-                MockEmailClient {
-                    sent_emails: Arc::new(Mutex::new(Vec::new())),
-                }
-            }
-
-            fn get_sent_emails(&self) -> Vec<(String, String, String, String)> {
-                self.sent_emails.lock().unwrap().clone()
+    impl MockEmailClient {
+        fn new() -> Self {
+            MockEmailClient {
+                sent_emails: Arc::new(Mutex::new(Vec::new())),
             }
         }
 
-        #[async_trait]
-        impl EmailClient for MockEmailClient {
-            async fn send_email(&self, from: &str, to: &str, subject: &str, body: &str) -> Result<(), String> {
-                self.sent_emails.lock().unwrap().push((
-                    from.to_string(),
-                    to.to_string(),
-                    subject.to_string(),
-                    body.to_string(),
-                ));
-
-                Ok(())
-            }
-        }
-
-        #[test]
-        fn test_generate_code_length() {
-            // Arrange
-            let provider = EmailMfaProvider {
-                email_client: Box::new(MockEmailClient::new()),
-                expiration_seconds: 300,
-                code_length: 6,
-                email_subject: "Test".to_string(),
-                sender_email: "test@example.com".to_string(),
-            };
-
-            // Act
-            let code = provider.generate_code();
-
-            // Assert
-            assert_eq!(code.len(), 6, "Le code généré devrait avoir 6 caractères");
+        fn get_sent_emails(&self) -> Vec<(String, String, String, String)> {
+            self.sent_emails.lock().unwrap().clone()
         }
     }
+
+    #[async_trait]
+    impl EmailClient for MockEmailClient {
+        async fn send_email(
+            &self,
+            from: &str,
+            to: &str,
+            subject: &str,
+            body: &str,
+        ) -> Result<(), String> {
+            self.sent_emails.lock().unwrap().push((
+                from.to_string(),
+                to.to_string(),
+                subject.to_string(),
+                body.to_string(),
+            ));
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_generate_code_length() {
+        // Arrange
+        let provider = EmailMfaProvider {
+            email_client: Box::new(MockEmailClient::new()),
+            expiration_seconds: 300,
+            code_length: 6,
+            email_subject: "Test".to_string(),
+            sender_email: "test@example.com".to_string(),
+        };
+
+        // Act
+        let code = provider.generate_code();
+
+        // Assert
+        assert_eq!(code.len(), 6, "Le code généré devrait avoir 6 caractères");
+    }
+}
