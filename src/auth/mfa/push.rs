@@ -3,11 +3,11 @@
 //! This module provides push notification verification for multi-factor authentication.
 //! It sends push notifications to a mobile app and verifies the response.
 
-use std::time::{Duration, SystemTime};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime};
+use uuid::Uuid;
 
 use crate::auth::mfa::MfaMethod;
 use crate::config::AppConfig;
@@ -119,7 +119,11 @@ pub struct PushMfaSettings {
 #[async_trait]
 pub trait PushClient: Send + Sync {
     /// Send a push notification
-    async fn send_notification(&self, device: &PushDevice, message: &PushMessage) -> Result<(), ApiError>;
+    async fn send_notification(
+        &self,
+        device: &PushDevice,
+        message: &PushMessage,
+    ) -> Result<(), ApiError>;
 }
 
 /// Push notification message
@@ -150,7 +154,10 @@ impl PushMfaProvider {
         let devices = self.get_user_devices(user_id).await?;
 
         if devices.is_empty() {
-            return Err(ApiError::new(400, "No devices registered for push notification".to_string()));
+            return Err(ApiError::new(
+                400,
+                "No devices registered for push notification".to_string(),
+            ));
         }
 
         // Create verification record
@@ -193,7 +200,10 @@ impl PushMfaProvider {
     }
 
     /// Check verification status
-    pub async fn check_verification(&self, verification_id: Uuid) -> Result<PushVerificationStatus, ApiError> {
+    pub async fn check_verification(
+        &self,
+        verification_id: Uuid,
+    ) -> Result<PushVerificationStatus, ApiError> {
         // Get verification
         let verification = self.get_verification(verification_id).await?;
 
@@ -201,7 +211,8 @@ impl PushMfaProvider {
         let now = Utc::now();
         if verification.expires_at < now && verification.status == PushVerificationStatus::Pending {
             // Update verification status
-            self.update_verification_status(verification_id, PushVerificationStatus::Expired).await?;
+            self.update_verification_status(verification_id, PushVerificationStatus::Expired)
+                .await?;
             return Ok(PushVerificationStatus::Expired);
         }
 
@@ -209,13 +220,20 @@ impl PushMfaProvider {
     }
 
     /// Update verification status (called by the mobile app)
-    pub async fn update_verification_status(&self, verification_id: Uuid, status: PushVerificationStatus) -> Result<(), ApiError> {
+    pub async fn update_verification_status(
+        &self,
+        verification_id: Uuid,
+        status: PushVerificationStatus,
+    ) -> Result<(), ApiError> {
         // Get verification
         let verification = self.get_verification(verification_id).await?;
 
         // Check if already completed or expired
         if verification.status != PushVerificationStatus::Pending {
-            return Err(ApiError::new(400, "Verification is already completed or expired".to_string()));
+            return Err(ApiError::new(
+                400,
+                "Verification is already completed or expired".to_string(),
+            ));
         }
 
         // Check if expired
@@ -238,7 +256,13 @@ impl PushMfaProvider {
     }
 
     /// Register a new device
-    pub async fn register_device(&self, user_id: Uuid, name: &str, token: &str, device_type: DeviceType) -> Result<Uuid, ApiError> {
+    pub async fn register_device(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        token: &str,
+        device_type: DeviceType,
+    ) -> Result<Uuid, ApiError> {
         // Check if device with this token already exists
         if let Some(existing_device) = self.get_device_by_token(token).await? {
             // If the device already belongs to this user, just update it
@@ -247,7 +271,10 @@ impl PushMfaProvider {
                 return Ok(existing_device.id);
             } else {
                 // Device token belongs to another user, this shouldn't happen
-                return Err(ApiError::new(400, "Device token already registered to another user".to_string()));
+                return Err(ApiError::new(
+                    400,
+                    "Device token already registered to another user".to_string(),
+                ));
             }
         }
 
@@ -303,7 +330,13 @@ impl PushMfaProvider {
     }
 
     /// Update a device (placeholder for actual DB implementation)
-    async fn update_device(&self, device_id: &Uuid, name: &str, token: &str, device_type: DeviceType) -> Result<(), ApiError> {
+    async fn update_device(
+        &self,
+        device_id: &Uuid,
+        name: &str,
+        token: &str,
+        device_type: DeviceType,
+    ) -> Result<(), ApiError> {
         // In a real application, you would update the device in your database
         // For this example, we just pretend it's updated
         Ok(())
@@ -338,7 +371,11 @@ impl PushMfaProvider {
     }
 
     /// Update a verification (placeholder for actual DB implementation)
-    async fn update_verification(&self, verification_id: Uuid, status: PushVerificationStatus) -> Result<(), ApiError> {
+    async fn update_verification(
+        &self,
+        verification_id: Uuid,
+        status: PushVerificationStatus,
+    ) -> Result<(), ApiError> {
         // In a real application, you would update the verification in your database
         // For this example, we just pretend it's updated
         Ok(())
@@ -367,7 +404,12 @@ impl MfaMethod for PushMfaProvider {
         Ok(verification_id.to_string())
     }
 
-    async fn complete_verification(&self, _user_id: Uuid, verification_id: &str, _code: &str) -> Result<bool, ApiError> {
+    async fn complete_verification(
+        &self,
+        _user_id: Uuid,
+        verification_id: &str,
+        _code: &str,
+    ) -> Result<bool, ApiError> {
         // Parse verification ID from string
         let verification_id = Uuid::parse_str(verification_id)
             .map_err(|_| ApiError::new(400, "Invalid verification ID".to_string()))?;
@@ -378,8 +420,12 @@ impl MfaMethod for PushMfaProvider {
         match status {
             PushVerificationStatus::Approved => Ok(true),
             PushVerificationStatus::Rejected => Ok(false),
-            PushVerificationStatus::Expired => Err(ApiError::new(400, "Verification has expired".to_string())),
-            PushVerificationStatus::Pending => Err(ApiError::new(400, "Verification is still pending".to_string())),
+            PushVerificationStatus::Expired => {
+                Err(ApiError::new(400, "Verification has expired".to_string()))
+            },
+            PushVerificationStatus::Pending => {
+                Err(ApiError::new(400, "Verification is still pending".to_string()))
+            },
         }
     }
 
@@ -409,7 +455,11 @@ impl FcmPushClient {
 
 #[async_trait]
 impl PushClient for FcmPushClient {
-    async fn send_notification(&self, device: &PushDevice, message: &PushMessage) -> Result<(), ApiError> {
+    async fn send_notification(
+        &self,
+        device: &PushDevice,
+        message: &PushMessage,
+    ) -> Result<(), ApiError> {
         // Build FCM payload
         let payload = match device.device_type {
             DeviceType::iOS => {
@@ -446,11 +496,12 @@ impl PushClient for FcmPushClient {
                     },
                     "data": message.data
                 })
-            }
+            },
         };
 
         // Send to FCM
-        let res = self.http_client
+        let res = self
+            .http_client
             .post("https://fcm.googleapis.com/fcm/send")
             .header("Authorization", format!("key={}", self.api_key))
             .header("Content-Type", "application/json")
@@ -461,137 +512,141 @@ impl PushClient for FcmPushClient {
 
         // Check response
         if !res.status().is_success() {
-            let error_message = res.text().await
-                .unwrap_or_else(|_| "Unknown error".to_string());
+            let error_message = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
 
-            return Err(ApiError::new(500, format!("FCM rejected push notification: {}", error_message)));
+            return Err(ApiError::new(
+                500,
+                format!("FCM rejected push notification: {}", error_message),
+            ));
         }
 
         Ok(())
     }
-
 }
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use std::sync::{Arc, Mutex};
-        use chrono::Utc;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::sync::{Arc, Mutex};
 
-        // Mock implementation for push notification client
-        #[derive(Clone)]
-        struct MockPushClient {
-            sent_notifications: Arc<Mutex<Vec<(PushDevice, PushMessage)>>>,
-            should_fail: bool,
-        }
+    // Mock implementation for push notification client
+    #[derive(Clone)]
+    struct MockPushClient {
+        sent_notifications: Arc<Mutex<Vec<(PushDevice, PushMessage)>>>,
+        should_fail: bool,
+    }
 
-        impl MockPushClient {
-            fn new() -> Self {
-                MockPushClient {
-                    sent_notifications: Arc::new(Mutex::new(Vec::new())),
-                    should_fail: false,
-                }
-            }
-
-            fn with_error() -> Self {
-                let mut client = Self::new();
-                client.should_fail = true;
-                client
-            }
-
-            fn get_sent_notifications(&self) -> Vec<(PushDevice, PushMessage)> {
-                self.sent_notifications.lock().unwrap().clone()
+    impl MockPushClient {
+        fn new() -> Self {
+            MockPushClient {
+                sent_notifications: Arc::new(Mutex::new(Vec::new())),
+                should_fail: false,
             }
         }
 
-        #[async_trait]
-        impl PushClient for MockPushClient {
-            async fn send_notification(&self, device: &PushDevice, message: &PushMessage) -> Result<(), ApiError> {
-                if self.should_fail {
-                    return Err(ApiError::ExternalServiceError("Simulated push notification failure".to_string()));
-                }
-
-                self.sent_notifications.lock().unwrap().push((
-                    device.clone(),
-                    message.clone(),
-                ));
-
-                Ok(())
-            }
+        fn with_error() -> Self {
+            let mut client = Self::new();
+            client.should_fail = true;
+            client
         }
 
-        // Test for provider creation
-        #[test]
-        fn test_provider_creation() {
-            let push_client = Box::new(MockPushClient::new());
-            let provider = PushMfaProvider {
-                push_client,
-                expiration_seconds: 300,
-            };
-
-            assert_eq!(provider.expiration_seconds, 300);
-        }
-
-        // Test for method name
-        #[test]
-        fn test_method_name() {
-            let push_client = Box::new(MockPushClient::new());
-            let provider = PushMfaProvider {
-                push_client,
-                expiration_seconds: 300,
-            };
-
-            assert_eq!(provider.get_method_name(), "push");
-        }
-
-        // Test for verification status
-        #[test]
-        fn test_push_verification_status() {
-            // Check that statuses can be compared correctly
-            assert_eq!(PushVerificationStatus::Pending, PushVerificationStatus::Pending);
-            assert_ne!(PushVerificationStatus::Approved, PushVerificationStatus::Rejected);
-
-            // Create a verification
-            let user_id = Uuid::new_v4();
-            let verification = PushVerification {
-                id: Uuid::new_v4(),
-                user_id,
-                created_at: Utc::now(),
-                expires_at: Utc::now() + chrono::Duration::seconds(300),
-                status: PushVerificationStatus::Pending,
-                device_id: "device123".to_string(),
-            };
-
-            // Verify that initial status is Pending
-            assert_eq!(verification.status, PushVerificationStatus::Pending);
-        }
-
-        // Test for push device creation
-        #[test]
-        fn test_push_device_creation() {
-            let user_id = Uuid::new_v4();
-            let device = PushDevice {
-                id: Uuid::new_v4(),
-                user_id,
-                name: "Test Phone".to_string(),
-                token: "fcm-token-123".to_string(),
-                device_type: DeviceType::Android,
-                created_at: Utc::now(),
-                last_used: None,
-            };
-
-            assert_eq!(device.name, "Test Phone");
-            assert_eq!(device.device_type, DeviceType::Android);
-            assert_eq!(device.last_used, None);
-        }
-
-        // Test for FcmPushClient creation
-        #[test]
-        fn test_fcm_client_creation() {
-            let client = FcmPushClient {
-                api_key: "test-api-key".to_string(),
-                http_client: reqwest::Client::new(),
-            };
-
-            assert_eq!(client.api_key, "test-api-key");
+        fn get_sent_notifications(&self) -> Vec<(PushDevice, PushMessage)> {
+            self.sent_notifications.lock().unwrap().clone()
         }
     }
+
+    #[async_trait]
+    impl PushClient for MockPushClient {
+        async fn send_notification(
+            &self,
+            device: &PushDevice,
+            message: &PushMessage,
+        ) -> Result<(), ApiError> {
+            if self.should_fail {
+                return Err(ApiError::ExternalServiceError(
+                    "Simulated push notification failure".to_string(),
+                ));
+            }
+
+            self.sent_notifications.lock().unwrap().push((device.clone(), message.clone()));
+
+            Ok(())
+        }
+    }
+
+    // Test for provider creation
+    #[test]
+    fn test_provider_creation() {
+        let push_client = Box::new(MockPushClient::new());
+        let provider = PushMfaProvider {
+            push_client,
+            expiration_seconds: 300,
+        };
+
+        assert_eq!(provider.expiration_seconds, 300);
+    }
+
+    // Test for method name
+    #[test]
+    fn test_method_name() {
+        let push_client = Box::new(MockPushClient::new());
+        let provider = PushMfaProvider {
+            push_client,
+            expiration_seconds: 300,
+        };
+
+        assert_eq!(provider.get_method_name(), "push");
+    }
+
+    // Test for verification status
+    #[test]
+    fn test_push_verification_status() {
+        // Check that statuses can be compared correctly
+        assert_eq!(PushVerificationStatus::Pending, PushVerificationStatus::Pending);
+        assert_ne!(PushVerificationStatus::Approved, PushVerificationStatus::Rejected);
+
+        // Create a verification
+        let user_id = Uuid::new_v4();
+        let verification = PushVerification {
+            id: Uuid::new_v4(),
+            user_id,
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::seconds(300),
+            status: PushVerificationStatus::Pending,
+            device_id: "device123".to_string(),
+        };
+
+        // Verify that initial status is Pending
+        assert_eq!(verification.status, PushVerificationStatus::Pending);
+    }
+
+    // Test for push device creation
+    #[test]
+    fn test_push_device_creation() {
+        let user_id = Uuid::new_v4();
+        let device = PushDevice {
+            id: Uuid::new_v4(),
+            user_id,
+            name: "Test Phone".to_string(),
+            token: "fcm-token-123".to_string(),
+            device_type: DeviceType::Android,
+            created_at: Utc::now(),
+            last_used: None,
+        };
+
+        assert_eq!(device.name, "Test Phone");
+        assert_eq!(device.device_type, DeviceType::Android);
+        assert_eq!(device.last_used, None);
+    }
+
+    // Test for FcmPushClient creation
+    #[test]
+    fn test_fcm_client_creation() {
+        let client = FcmPushClient {
+            api_key: "test-api-key".to_string(),
+            http_client: reqwest::Client::new(),
+        };
+
+        assert_eq!(client.api_key, "test-api-key");
+    }
+}
