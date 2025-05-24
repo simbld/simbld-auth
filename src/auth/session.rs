@@ -194,15 +194,9 @@ impl SessionService {
     }
 
     /// Revoke a session (logout)
-    pub async fn revoke_session(
-        client: &Client,
-        token: &str,
-    ) -> Result<(), SessionError> {
+    pub async fn revoke_session(client: &Client, token: &str) -> Result<(), SessionError> {
         let result = client
-            .execute(
-                "UPDATE user_sessions SET revoked = true WHERE token = $1",
-                &[&token],
-            )
+            .execute("UPDATE user_sessions SET revoked = true WHERE token = $1", &[&token])
             .await
             .map_err(|e| SessionError::DatabaseError(e.to_string()))?;
 
@@ -253,7 +247,8 @@ impl SessionService {
                 user_agent: row.get("user_agent"),
                 created_at: row.get::<_, DateTime<Utc>>("created_at").timestamp(),
                 expires_at: row.get::<_, DateTime<Utc>>("expires_at").timestamp(),
-                last_used_at: row.get::<_, Option<DateTime<Utc>>>("last_used_at")
+                last_used_at: row
+                    .get::<_, Option<DateTime<Utc>>>("last_used_at")
                     .map(|dt| dt.timestamp()),
             })
             .collect();
@@ -306,9 +301,9 @@ pub struct SessionInfo {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use tokio_postgres::Client;
-    use std::str::FromStr;
     use mockall::{mock, predicate};
+    use std::str::FromStr;
+    use tokio_postgres::Client;
 
     // Mocking the PostgreSQL client for testing
     mock! {
@@ -335,7 +330,8 @@ mod tests {
         // expectations based on your actual implementation
 
         // Act
-        let result = SessionService::create_session(&client, user_id, device_info, remember_me).await;
+        let result =
+            SessionService::create_session(&client, user_id, device_info, remember_me).await;
 
         // Assert
         assert!(result.is_ok());
