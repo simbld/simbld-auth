@@ -19,72 +19,60 @@ pub enum MfaType {
 /// Represents a user in the system
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
-    /// Unique user identifier
     pub id: Uuid,
-
-    /// User's display name
     pub username: String,
-
-    /// User's email address (unique)
     pub email: String,
-
-    /// Timestamp when the user was created
+    pub password_hash: String,
+    pub mfa_enabled: bool,
+    pub mfa_secret: Option<String>,
+    pub account_locked: bool,
+    pub failed_login_attempts: i32,
+    pub last_login: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
-
-    /// Timestamp when the user was last updated
     pub updated_at: DateTime<Utc>,
+    pub password_changed_at: Option<DateTime<Utc>>,
+    pub password_history: Vec<String>,
+    pub password_expires_at: Option<DateTime<Utc>>,
+    pub require_password_change: bool,
+}
+
+/// Represents a database role with associated permissions
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DatabaseRole {
+    pub id: Uuid,
+    pub name: String,
+    pub permissions: Vec<String>,
+}
+
+/// Represents a user's role in the system
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserRole {
+    pub user_id: Uuid,
+    pub role_id: Uuid,
 }
 
 /// A user's refresh token for obtaining new access tokens
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RefreshToken {
-    /// Unique token identifier
     pub id: Uuid,
-
-    /// The actual token string
     pub token: String,
-
-    /// User who owns this token
     pub user_id: Uuid,
-
-    /// Session associated with this token
     pub session_id: Uuid,
-
-    /// Timestamp when the token expires
     pub expires_at: DateTime<Utc>,
-
-    /// Indicates if the token has been revoked
     pub is_revoked: bool,
-
-    /// Timestamp when the token was created
     pub created_at: DateTime<Utc>,
 }
 
 /// Represents a user session
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
-    /// Unique session identifier
     pub id: Uuid,
-
-    /// User who owns this session
     pub user_id: Uuid,
-
-    /// IP address used to create the session
     pub ip_address: String,
-
-    /// User agent (browser/app) used to create the session
     pub user_agent: String,
-
-    /// Timestamp when the session expires
     pub expires_at: DateTime<Utc>,
-
-    /// Indicates if the session has been revoked
     pub is_revoked: bool,
-
-    /// Timestamp when the session was last accessed
     pub last_activity: DateTime<Utc>,
-
-    /// Timestamp when the session was created
     pub created_at: DateTime<Utc>,
 }
 
@@ -98,82 +86,42 @@ impl Session {
 /// MFA setup information for a user
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MfaSetup {
-    /// Unique identifier
     pub id: Uuid,
-
-    /// User who owns this MFA setup
     pub user_id: Uuid,
-
-    /// TOTP secret key
     pub secret: String,
-
-    /// Indicates if MFA is fully activated
     pub is_verified: bool,
-
-    /// Timestamp when the MFA setup was created
     pub created_at: DateTime<Utc>,
 }
 
 /// User role for authorization
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum Role {
-    /// Regular user role
     User,
-
-    /// Administrator role with elevated permissions
     Admin,
-
-    /// Moderator role with limited administrative permissions
     Moderator,
 }
 
 /// Represents a user's login attempt for security monitoring
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginAttempt {
-    /// Unique identifier
     pub id: Uuid,
-
-    /// User who attempted to login (if identified)
     pub user_id: Option<Uuid>,
-
-    /// Email used in the login attempt
     pub email: String,
-
-    /// IP address used for the login attempt
     pub ip_address: String,
-
-    /// User agent used for the login attempt
     pub user_agent: String,
-
-    /// Whether the attempt was successful
     pub successful: bool,
-
-    /// Failure reason if unsuccessful
     pub failure_reason: Option<String>,
-
-    /// Timestamp when the attempt occurred
     pub created_at: DateTime<Utc>,
 }
 
 /// Represents a password reset request
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PasswordReset {
-    /// Unique identifier
     pub id: Uuid,
-
-    /// User who requested the reset
     pub user_id: Uuid,
-
-    /// Token for verifying the reset request
     pub token: String,
-
-    /// Timestamp when the token expires
     pub expires_at: DateTime<Utc>,
-
-    /// Whether the token has been used
     pub used: bool,
-
-    /// Timestamp when the reset was requested
     pub created_at: DateTime<Utc>,
 }
 
@@ -190,8 +138,18 @@ mod tests {
             id: Uuid::new_v4(),
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
+            password_hash: "".to_string(),
+            mfa_enabled: false,
+            mfa_secret: None,
+            account_locked: false,
+            failed_login_attempts: 0,
+            last_login: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            password_changed_at: None,
+            password_history: vec![],
+            password_expires_at: None,
+            require_password_change: false,
         };
 
         // Serialize to JSON
@@ -515,8 +473,18 @@ mod tests {
             id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
+            password_hash: "".to_string(),
+            mfa_enabled: false,
+            mfa_secret: None,
+            account_locked: false,
+            failed_login_attempts: 0,
+            last_login: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            password_changed_at: None,
+            password_history: vec![],
+            password_expires_at: None,
+            require_password_change: false,
         };
 
         let json = serde_json::to_string(&user).unwrap();
@@ -540,8 +508,18 @@ mod tests {
             id: user_id,
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
+            password_hash: "".to_string(),
+            mfa_enabled: false,
+            mfa_secret: None,
+            account_locked: false,
+            failed_login_attempts: 0,
+            last_login: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            password_changed_at: None,
+            password_history: vec![],
+            password_expires_at: None,
+            require_password_change: false,
         };
 
         // Create session for user
