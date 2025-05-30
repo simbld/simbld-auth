@@ -23,6 +23,8 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub password_hash: String,
+    pub display_name: Option<String>,
+    pub profile_image: Option<String>,
     pub mfa_enabled: bool,
     pub mfa_secret: Option<String>,
     pub account_locked: bool,
@@ -125,6 +127,20 @@ pub struct PasswordReset {
     pub created_at: DateTime<Utc>,
 }
 
+/// Represents an OAuth provider linked to a user
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OAuthProvider {
+    pub id: Uuid,
+    pub provider_name: String,
+    pub provider_user_id: String,
+    pub user_id: Uuid,
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +155,8 @@ mod tests {
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
             password_hash: "".to_string(),
+            display_name: None,
+            profile_image: None,
             mfa_enabled: false,
             mfa_secret: None,
             account_locked: false,
@@ -474,6 +492,8 @@ mod tests {
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
             password_hash: "".to_string(),
+            display_name: None,
+            profile_image: None,
             mfa_enabled: false,
             mfa_secret: None,
             account_locked: false,
@@ -509,6 +529,8 @@ mod tests {
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
             password_hash: "".to_string(),
+            display_name: None,
+            profile_image: None,
             mfa_enabled: false,
             mfa_secret: None,
             account_locked: false,
