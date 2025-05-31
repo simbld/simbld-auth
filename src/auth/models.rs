@@ -16,6 +16,14 @@ pub enum MfaType {
     Sms,
 }
 
+/// User role for authorization
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub enum Role {
+    User,
+    Admin,
+    Moderator,
+}
+
 /// Represents a user in the system
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
@@ -93,14 +101,6 @@ pub struct MfaSetup {
     pub secret: String,
     pub is_verified: bool,
     pub created_at: DateTime<Utc>,
-}
-
-/// User role for authorization
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub enum Role {
-    User,
-    Admin,
-    Moderator,
 }
 
 /// Represents a user's login attempt for security monitoring
@@ -380,7 +380,6 @@ mod tests {
         assert_eq!(Role::User, Role::User);
         assert_eq!(Role::Admin, Role::Admin);
         assert_eq!(Role::Moderator, Role::Moderator);
-
         assert_ne!(Role::User, Role::Admin);
         assert_ne!(Role::User, Role::Moderator);
         assert_ne!(Role::Admin, Role::Moderator);
