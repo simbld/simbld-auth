@@ -7,6 +7,7 @@
 //! - MFA policy enforcement
 
 pub mod backup_codes;
+pub mod dto;
 pub mod email;
 pub mod push;
 pub mod recovery;
