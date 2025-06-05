@@ -4,19 +4,18 @@
 //! business logic for the API endpoints related to authentication, user
 //! management, and authorization.
 
-use std::sync::Arc;
-use std::collections::HashMap;
-use actix_web::{web, HttpResponse, Responder};
 use actix_web::web::{Json, Path, Query};
+use actix_web::{web, HttpResponse, Responder};
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::auth::Claims;
 use crate::errors::AppError;
 use crate::models::{
-    ApiResponse, RegisterUserDto, LoginUserDto, TokenResponseDto,
-    UserResponseDto, DetailedUserResponseDto, UpdateProfileDto,
-    ChangePasswordDto, ListUsersQuery, AssignRoleDto, OAuthUserDto,
-    VerifyEmailDto, PasswordResetRequestDto, PasswordResetDto, UserStatsDto
+    ApiResponse, AssignRoleDto, ChangePasswordDto, DetailedUserResponseDto, ListUsersQuery,
+    LoginUserDto, OAuthUserDto, PasswordResetDto, PasswordResetRequestDto, RegisterUserDto,
+    TokenResponseDto, UpdateProfileDto, UserResponseDto, UserStatsDto, VerifyEmailDto,
 };
 use crate::state::AppState;
 
@@ -147,8 +146,8 @@ pub async fn oauth_callback(
     path: Path<String>,
     query: Query<HashMap<String, String>>,
 ) -> Result<HttpResponse, AppError> {
-    let provider = path.into_inner();
-    let result = state.oauth_service.handle_callback(&provider, &query).await?;
+    let provider_name = path.into_inner();
+    let result = state.oauth_service.handle_callback(&provider_name, &query).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
 }
 
@@ -210,9 +209,7 @@ pub async fn reset_password(
 /// Get user statistics
 ///
 /// Admin only. Returns statistics about user accounts.
-pub async fn get_user_stats(
-    state: web::Data<Arc<AppState>>,
-) -> Result<HttpResponse, AppError> {
+pub async fn get_user_stats(state: web::Data<Arc<AppState>>) -> Result<HttpResponse, AppError> {
     let stats = state.user_service.get_stats().await?;
     Ok(HttpResponse::Ok().json(ApiResponse::success(stats)))
 }
@@ -242,9 +239,8 @@ pub async fn refresh_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, App, web};
-    use actix_web::http::StatusCode;
-    use crate::mock::{MockUserService, MockAuthService, MockRoleService};
+    use crate::mock::{MockAuthService, MockRoleService, MockUserService};
+    use actix_web::{test, web, App};
     use std::sync::Arc;
 
     /// Create a test application state with mock services
