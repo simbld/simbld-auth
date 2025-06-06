@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 
 // Mock response for user info
 pub struct MockUserInfoResponse {
-    pub provider: OAuthProvider,
+    pub provider_name: OAuthProvider,
     pub provider_user_id: String,
     pub email: Option<String>,
     pub display_name: Option<String>,
@@ -28,7 +28,11 @@ impl MockOAuthService {
         }
     }
 
-    pub fn add_authorize_response(&self, provider: OAuthProvider, response: Result<String, String>) {
+    pub fn add_authorize_response(
+        &self,
+        provider: OAuthProvider,
+        response: Result<String, String>,
+    ) {
         self.authorize_responses.write().unwrap().insert(provider, response);
     }
 
@@ -57,7 +61,9 @@ impl MockOAuthService {
 }
 
 // Helper function to create OAuthService for testing
-pub fn create_test_oauth_service_with_client(mock_client: crate::mocks::mock_client::MockClient) -> OAuthService {
+pub fn create_test_oauth_service_with_client(
+    mock_client: crate::mocks::mock_client::MockClient,
+) -> OAuthService {
     // In a real implementation, this would create an OAuthService instance with the mock client
     todo!("Implement create_test_oauth_service_with_client to return a valid OAuthService that uses the provided mock client")
 }
