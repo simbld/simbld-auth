@@ -2,20 +2,21 @@
 //! This module provides functionality for generating, verifying, and managing TOTP-based
 //! authentication, including backup codes generation and QR code generation for easy setup.
 
+pub(crate) use crate::auth::models::MfaType;
 use base32;
 use base32::data::Alphabet;
-use sqlx::{FromRow, Pool, Postgres, Row};
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
-use thiserror::Error;
-pub(crate) use crate::auth::models::MfaType;
 use base64::{engine::general_purpose, Engine as _};
+use chrono::{DateTime, Utc};
+use futures_util::TryFutureExt;
 use hmac::{Hmac, Mac};
 use qrcode::{render::svg, QrCode};
-use rand::{rngs::OsRng, RngCore, Rng};
+use rand::{rngs::OsRng, Rng, RngCore};
+use serde::{Deserialize, Serialize};
 use sha1::Sha1;
+use sqlx::{FromRow, Pool, Postgres, Row};
+use thiserror::Error;
 use url::Url;
+use uuid::Uuid;
 
 // Constants for TOTP configuration
 const SECRET_LENGTH: usize = 32;
@@ -50,10 +51,10 @@ pub struct MfaMethod {
     pub id: Uuid,
     pub user_id: Uuid,
     pub method_type: String, // Will contain "totp"
-    pub is_primary: bool, // Indicates if this is the primary MFA method
+    pub is_primary: bool,    // Indicates if this is the primary MFA method
     pub enabled: bool,
-    pub secret: Option<String>, // Optional secret for TOTP
-    pub verified: Option<bool>, // Optional verification status
+    pub secret: Option<String>,              // Optional secret for TOTP
+    pub verified: Option<bool>,              // Optional verification status
     pub last_used_at: Option<DateTime<Utc>>, // Optional last used timestamp
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -64,7 +65,7 @@ pub struct MfaMethod {
 pub struct TotpData {
     pub id: Uuid,
     pub mfa_method_id: Uuid,
-    pub code: String,  // Will store the TOTP secret
+    pub code: String, // Will store the TOTP secret
     pub used: bool,
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
@@ -106,11 +107,13 @@ impl TotpService {
         secret: Option<String>,
     ) -> Result<(String, Vec<String>), TotpError> {
         // Check if TOTP is already set up
-        let existing = sqlx::query_as::<_, MfaMethod>("SELECT * FROM mfa_methods WHERE user_id = $1 AND method_type = 'totp'")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        let existing = sqlx::query_as::<_, MfaMethod>(
+            "SELECT * FROM mfa_methods WHERE user_id = $1 AND method_type = 'totp'",
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         if existing.is_some() {
             return Err(TotpError::AlreadySetup);
@@ -123,30 +126,29 @@ impl TotpService {
         };
 
         // Start a transaction
-        let mut tx = pool.begin().await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        let mut tx = pool.begin().await.map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Insert MFA method
         let mfa_method = sqlx::query_as::<_, MfaMethod>(
             "INSERT INTO mfa_methods (user_id, method_type, secret, enabled, verified, is_primary)
-     VALUES ($1, 'totp', $2, false, false, false) RETURNING *"
+     VALUES ($1, 'totp', $2, false, false, false) RETURNING *",
         )
-            .bind(user_id)
-            .bind(&secret)
-            .fetch_one(pool)
-            .await?;
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(user_id)
+        .bind(&secret)
+        .fetch_one(pool)
+        .await?
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Store the TOTP secret as a special "backup code"
         sqlx::query(
             "INSERT INTO backup_codes (mfa_method_id, code, used)
-             VALUES ($1, $2, false)"
+             VALUES ($1, $2, false)",
         )
-            .bind(mfa_method.id)
-            .bind(&secret)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(mfa_method.id)
+        .bind(&secret)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Generate backup codes
         let backup_codes = Self::generate_backup_codes(10);
@@ -155,18 +157,17 @@ impl TotpService {
         for code in &backup_codes {
             sqlx::query(
                 "INSERT INTO backup_codes (mfa_method_id, code, used)
-                 VALUES ($1, $2, false)"
+                 VALUES ($1, $2, false)",
             )
-                .bind(mfa_method.id)
-                .bind(code)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+            .bind(mfa_method.id)
+            .bind(code)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
         }
 
         // Commit transaction
-        tx.commit().await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        tx.commit().await.map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         Ok((secret, backup_codes))
     }
@@ -179,12 +180,12 @@ impl TotpService {
     ) -> Result<bool, TotpError> {
         // Get the MFA method
         let mfa_method = sqlx::query_as::<_, MfaMethod>(
-            "SELECT * FROM mfa_methods WHERE user_id = $1 AND method_type = 'totp'"
+            "SELECT * FROM mfa_methods WHERE user_id = $1 AND method_type = 'totp'",
         )
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         let mfa_method = match mfa_method {
             Some(m) => m,
@@ -197,12 +198,12 @@ impl TotpService {
              FROM backup_codes bc
              JOIN mfa_methods mm ON bc.mfa_method_id = mm.id
              WHERE mm.user_id = $1 AND mm.method_type = 'totp'
-             LIMIT 1"
+             LIMIT 1",
         )
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         let totp_data = match totp_data {
             Some(d) => d,
@@ -215,12 +216,14 @@ impl TotpService {
         }
 
         // Activate TOTP for the user
-        sqlx::query("UPDATE mfa_methods SET verified = true, enabled = true
-             WHERE user_id = $1 AND method_type = 'totp'")
-            .bind(user_id)
-            .execute(pool)
-            .await?;
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        sqlx::query(
+            "UPDATE mfa_methods SET verified = true, enabled = true
+             WHERE user_id = $1 AND method_type = 'totp'",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await?
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         Ok(true)
     }
@@ -234,12 +237,12 @@ impl TotpService {
         // Get the MFA method
         let mfa_method = sqlx::query_as::<_, MfaMethod>(
             "SELECT * FROM mfa_methods
-             WHERE user_id = $1 AND method_type = 'totp' AND enabled = true"
+             WHERE user_id = $1 AND method_type = 'totp' AND enabled = true",
         )
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         let mfa_method = match mfa_method {
             Some(m) => m,
@@ -249,25 +252,25 @@ impl TotpService {
         // Check if the code is a backup code
         let backup_code = sqlx::query_as::<_, BackupCode>(
             "SELECT * FROM backup_codes
-             WHERE mfa_method_id = $1 AND code = $2 AND used = false"
+             WHERE mfa_method_id = $1 AND code = $2 AND used = false",
         )
-            .bind(mfa_method.id)
-            .bind(code)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(mfa_method.id)
+        .bind(code)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         if let Some(backup_code) = backup_code {
             // Mark the backup code as used
             sqlx::query(
                 "UPDATE backup_codes
                  SET used = true, last_used_at = CURRENT_TIMESTAMP
-                 WHERE id = $1"
+                 WHERE id = $1",
             )
-                .bind(backup_code.id)
-                .execute(pool)
-                .await
-                .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+            .bind(backup_code.id)
+            .execute(pool)
+            .await
+            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
             return Ok(true);
         }
@@ -277,12 +280,12 @@ impl TotpService {
             "SELECT bc.id, bc.mfa_method_id, bc.code, bc.used, bc.created_at, bc.last_used_at
              FROM backup_codes bc
              WHERE bc.mfa_method_id = $1
-             LIMIT 1"
+             LIMIT 1",
         )
-            .bind(mfa_method.id)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(mfa_method.id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Verify TOTP code
         if Self::verify_code(&totp_data.code, code, None) {
@@ -290,12 +293,12 @@ impl TotpService {
             sqlx::query(
                 "UPDATE mfa_methods
                  SET updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $1"
+                 WHERE id = $1",
             )
-                .bind(mfa_method.id)
-                .execute(pool)
-                .await
-                .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+            .bind(mfa_method.id)
+            .execute(pool)
+            .await
+            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
             return Ok(true);
         }
@@ -304,19 +307,16 @@ impl TotpService {
     }
 
     /// Disables TOTP for a user
-    pub async fn disable_totp(
-        pool: &Pool<Postgres>,
-        user_id: Uuid,
-    ) -> Result<(), TotpError> {
+    pub async fn disable_totp(pool: &Pool<Postgres>, user_id: Uuid) -> Result<(), TotpError> {
         // Get the MFA method
         let mfa_method = sqlx::query_as::<_, MfaMethod>(
             "SELECT * FROM mfa_methods
-             WHERE user_id = $1 AND method_type = 'totp'"
+             WHERE user_id = $1 AND method_type = 'totp'",
         )
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         let mfa_method = match mfa_method {
             Some(m) => m,
@@ -324,30 +324,24 @@ impl TotpService {
         };
 
         // Start a transaction
-        let mut tx = pool.begin().await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        let mut tx = pool.begin().await.map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Delete backup codes
-        sqlx::query(
-            "DELETE FROM backup_codes WHERE mfa_method_id = $1"
-        )
+        sqlx::query("DELETE FROM backup_codes WHERE mfa_method_id = $1")
             .bind(mfa_method.id)
             .execute(&mut *tx)
             .await
             .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Delete MFA method
-        sqlx::query(
-            "DELETE FROM mfa_methods WHERE id = $1"
-        )
+        sqlx::query("DELETE FROM mfa_methods WHERE id = $1")
             .bind(mfa_method.id)
             .execute(&mut *tx)
             .await
             .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Commit transaction
-        tx.commit().await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        tx.commit().await.map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         Ok(())
     }
@@ -360,12 +354,12 @@ impl TotpService {
         // Get the MFA method
         let mfa_method = sqlx::query_as::<_, MfaMethod>(
             "SELECT * FROM mfa_methods
-             WHERE user_id = $1 AND method_type = 'totp'"
+             WHERE user_id = $1 AND method_type = 'totp'",
         )
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         let mfa_method = match mfa_method {
             Some(m) => m,
@@ -373,8 +367,7 @@ impl TotpService {
         };
 
         // Start a transaction
-        let mut tx = pool.begin().await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        let mut tx = pool.begin().await.map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Delete old backup codes (except the TOTP secret which is the first one)
         sqlx::query(
@@ -385,12 +378,12 @@ impl TotpService {
                  WHERE mfa_method_id = $1
                  ORDER BY created_at ASC
                  LIMIT 1
-             )"
+             )",
         )
-            .bind(mfa_method.id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .bind(mfa_method.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         // Generate new backup codes
         let backup_codes = Self::generate_backup_codes(10);
@@ -399,18 +392,17 @@ impl TotpService {
         for code in &backup_codes {
             sqlx::query(
                 "INSERT INTO backup_codes (mfa_method_id, code, used)
-                 VALUES ($1, $2, false)"
+                 VALUES ($1, $2, false)",
             )
-                .bind(mfa_method.id)
-                .bind(code)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+            .bind(mfa_method.id)
+            .bind(code)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
         }
 
         // Commit transaction
-        tx.commit().await
-            .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        tx.commit().await.map_err(|e| TotpError::DatabaseError(e.to_string()))?;
 
         Ok(backup_codes)
     }
@@ -433,10 +425,10 @@ impl TotpService {
 
     /// Generates a QR code as a data URI for the TOTP provisioning URI
     pub fn generate_qr_code_url(uri: &str) -> Result<String, TotpError> {
-        let code = QrCode::new(uri)
-            .map_err(|e| TotpError::QrCodeGenerationError(e.to_string()))?;
+        let code = QrCode::new(uri).map_err(|e| TotpError::QrCodeGenerationError(e.to_string()))?;
 
-        let svg = code.render::<svg::Color>()
+        let svg = code
+            .render::<svg::Color>()
             .min_dimensions(200, 200)
             .max_dimensions(300, 300)
             .dark_color(svg::Color("#000000"))
@@ -453,9 +445,7 @@ impl TotpService {
         let mut codes = Vec::with_capacity(count);
 
         for _ in 0..count {
-            let code: String = (0..8)
-                .map(|_| rng.gen_range(0..10).to_string())
-                .collect();
+            let code: String = (0..8).map(|_| rng.gen_range(0..10).to_string()).collect();
             codes.push(code);
         }
 
@@ -483,8 +473,13 @@ impl TotpService {
     /// Generates a TOTP code for a given timestamp
     fn generate_code(secret: &str, timestamp: u64) -> String {
         // Decode the base32-encoded secret
-        let decoded = base32::decode(Alphabet::RFC4648 { padding: false }, secret)
-            .expect("Invalid base32 secret");
+        let decoded = base32::decode(
+            Alphabet::RFC4648 {
+                padding: false,
+            },
+            secret,
+        )
+        .expect("Invalid base32 secret");
 
         // Calculate the time counter (number of time steps)
         let counter = timestamp / DEFAULT_PERIOD;
@@ -493,8 +488,8 @@ impl TotpService {
         let counter_bytes = counter.to_be_bytes();
 
         // Create HMAC-SHA1 hash
-        let mut mac = Hmac::<Sha1>::new_from_slice(&decoded)
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            Hmac::<Sha1>::new_from_slice(&decoded).expect("HMAC can take key of any size");
         mac.update(&counter_bytes);
         let result = mac.finalize().into_bytes();
 
