@@ -91,6 +91,35 @@ impl UserService {
         self.repo.find_by_username(username).await
     }
 
+    /// Gets a user by their OAuth provider information
+    pub async fn get_user_with_oauth(&self, user_id: Uuid) -> Result<UserWithOAuthDto, UserError> {
+        let user = self.repository.get_user_by_id(user_id).await?;
+
+        // Récupérer le fournisseur OAuth (s'il existe)
+        let oauth_provider = self.oauth_repository.get_provider_for_user(user_id).await.ok();
+
+        Ok(UserWithOAuthDto::from_user_and_provider(user, oauth_provider))
+    }
+
+    /// Gets a user by their OAuth provider and user ID
+    pub async fn list_users_with_oauth(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<UserWithOAuthDto>, UserError> {
+        let users = self.repository.list_users(limit, offset).await?;
+
+        // Pour chaque utilisateur, récupérer son fournisseur OAuth
+        let mut result = Vec::with_capacity(users.len());
+        for user in users {
+            let oauth_provider = self.oauth_repository.get_provider_for_user(user.id).await.ok();
+
+            result.push(UserWithOAuthDto::from_user_and_provider(user, oauth_provider));
+        }
+
+        Ok(result)
+    }
+
     /// Updates a user's profile information
     pub async fn update_profile(
         &self,
@@ -171,14 +200,14 @@ impl UserService {
     pub async fn create_or_update_oauth_user(
         &self,
         email: String,
-        provider: String,
+        provider_name: String,
         provider_user_id: String,
         display_name: Option<String>,
         profile_image: Option<String>,
     ) -> Result<User, UserError> {
         // Check if user exists by provider info
         if let Some(mut existing_user) =
-            self.repo.find_by_provider(&provider, &provider_user_id).await?
+            self.repo.find_by_provider(&provider_name, &provider_user_id).await?
         {
             // Update user information
             if let Some(name) = display_name {
@@ -196,7 +225,7 @@ impl UserService {
         // Check if user exists by email
         if let Some(mut existing_user) = self.repo.find_by_email(&email).await? {
             // Link provider to existing user
-            existing_user.provider = provider;
+            existing_user.provider_name = provider_name;
             existing_user.provider_user_id = provider_user_id;
 
             if let Some(name) = display_name {
@@ -212,7 +241,8 @@ impl UserService {
         }
 
         // Create new user
-        let user = User::new_oauth(email, provider, provider_user_id, display_name, profile_image);
+        let user =
+            User::new_oauth(email, provider_name, provider_user_id, display_name, profile_image);
         self.repo.create(&user).await?;
 
         Ok(user)
