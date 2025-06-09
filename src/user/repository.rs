@@ -35,7 +35,10 @@ pub trait UserRepository: Send + Sync {
     async fn remove_oauth_provider(&self, id: &Uuid) -> Result<(), UserError>;
 
     /// Finds all OAuth providers for a specific user
-    async fn find_oauth_providers_by_user_id(&self, user_id: &Uuid) -> Result<Vec<OAuthProvider>, UserError>;
+    async fn find_oauth_providers_by_user_id(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<OAuthProvider>, UserError>;
 
     /// Finds a user by provider information (OAuth)
     async fn find_by_provider(
@@ -91,30 +94,31 @@ impl PgUserRepository {
 impl UserRepository for PgUserRepository {
     async fn find_by_id(&self, id: &Uuid) -> Result<Option<User>, UserError> {
         let user = sqlx::query_as!(
-        User,
-        r#"
+            User,
+            r#"
         SELECT
-            id, username, email, email_verified, password_hash, mfa_enabled, mfa_secret,
+            id, username, email, password_hash, mfa_enabled, mfa_secret,
             account_locked, failed_login_attempts, last_login, created_at, updated_at,
             password_changed_at, password_history, password_expires_at, require_password_change,
-            provider_name, provider_user_id, display_name, avatar_url, refresh_token,
-            profile_image, status as "status: Option<UserStatus>"
+            false as email_verified, null as provider_name, null as provider_user_id,
+            null as display_name, null as avatar_url, null as refresh_token,
+            null as profile_image, 'active' as "status: Option<UserStatus>"
         FROM users
         WHERE id = $1
         "#,
-        id
-    )
-            .fetch_optional(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            id
+        )
+        .fetch_optional(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(user)
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserError> {
         let user = sqlx::query_as!(
-        User,
-        r#"
+            User,
+            r#"
         SELECT
             id, username, email, password_hash, mfa_enabled, mfa_secret,
             account_locked, failed_login_attempts, last_login, created_at, updated_at,
@@ -125,11 +129,11 @@ impl UserRepository for PgUserRepository {
         FROM users
         WHERE email = $1
         "#,
-        email
-    )
-            .fetch_optional(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            email
+        )
+        .fetch_optional(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(user)
     }
@@ -175,9 +179,9 @@ impl UserRepository for PgUserRepository {
             provider.created_at,
             provider.updated_at
         )
-            .execute(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+        .execute(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(())
     }
@@ -205,9 +209,9 @@ impl UserRepository for PgUserRepository {
             Utc::now(),
             provider.id
         )
-            .execute(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+        .execute(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(())
     }
@@ -220,14 +224,17 @@ impl UserRepository for PgUserRepository {
             "#,
             id
         )
-            .execute(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+        .execute(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(())
     }
 
-    async fn find_oauth_providers_by_user_id(&self, user_id: &Uuid) -> Result<Vec<OAuthProvider>, UserError> {
+    async fn find_oauth_providers_by_user_id(
+        &self,
+        user_id: &Uuid,
+    ) -> Result<Vec<OAuthProvider>, UserError> {
         let providers = sqlx::query_as!(
             OAuthProvider,
             r#"
@@ -237,9 +244,9 @@ impl UserRepository for PgUserRepository {
             "#,
             user_id
         )
-            .fetch_all(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+        .fetch_all(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(providers)
     }
@@ -276,18 +283,18 @@ impl UserRepository for PgUserRepository {
         provider_user_id: &str,
     ) -> Result<Option<OAuthProvider>, UserError> {
         let provider = sqlx::query_as!(
-        OAuthProvider,
-        r#"
+            OAuthProvider,
+            r#"
         SELECT *
         FROM oauth_providers
         WHERE provider_name = $1 AND provider_user_id = $2
         "#,
-        provider_name,
-        provider_user_id
-    )
-            .fetch_optional(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            provider_name,
+            provider_user_id
+        )
+        .fetch_optional(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(provider)
     }
@@ -334,7 +341,7 @@ impl UserRepository for PgUserRepository {
 
     async fn update(&self, user: &User) -> Result<(), UserError> {
         sqlx::query!(
-        r#"
+            r#"
         UPDATE users
         SET
             username = $1,
@@ -352,114 +359,114 @@ impl UserRepository for PgUserRepository {
             require_password_change = $13
         WHERE id = $14
         "#,
-        user.username,
-        user.email,
-        user.password_hash,
-        user.mfa_enabled,
-        user.mfa_secret,
-        user.account_locked,
-        user.failed_login_attempts,
-        user.last_login,
-        user.updated_at,
-        user.password_changed_at,
-        &user.password_history,
-        user.password_expires_at,
-        user.require_password_change,
-        user.id
-    )
-            .execute(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            user.username,
+            user.email,
+            user.password_hash,
+            user.mfa_enabled,
+            user.mfa_secret,
+            user.account_locked,
+            user.failed_login_attempts,
+            user.last_login,
+            user.updated_at,
+            user.password_changed_at,
+            &user.password_history,
+            user.password_expires_at,
+            user.require_password_change,
+            user.id
+        )
+        .execute(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(())
     }
 
     async fn delete(&self, id: &Uuid) -> Result<(), UserError> {
         sqlx::query!(
-        r#"
+            r#"
         DELETE FROM users
         WHERE id = $1
         "#,
-        id
-    )
-            .execute(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            id
+        )
+        .execute(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(())
     }
 
     async fn assign_role(&self, user_id: &Uuid, role: UserRole) -> Result<(), UserError> {
         sqlx::query!(
-        r#"
+            r#"
         INSERT INTO user_roles (user_id, role_id)
         VALUES ($1, $2)
         ON CONFLICT (user_id, role_id) DO NOTHING
         "#,
-        user_id,
-        role as i32
-    )
-            .execute(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            user_id,
+            role as i32
+        )
+        .execute(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(())
     }
 
     async fn get_user_roles(&self, user_id: &Uuid) -> Result<Vec<UserRole>, UserError> {
         let roles = sqlx::query_as!(
-        UserRole,
-        r#"
+            UserRole,
+            r#"
         SELECT user_id, role_id
         FROM user_roles
         WHERE user_id = $1
         "#,
-        user_id
-    )
-            .fetch_all(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            user_id
+        )
+        .fetch_all(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(roles)
     }
 
     async fn list_users(&self, limit: i64, offset: i64) -> Result<Vec<User>, UserError> {
         let users = sqlx::query_as!(
-        User,
-        r#"
+            User,
+            r#"
         SELECT
-            id, username, email, email_verified, password_hash, mfa_enabled, mfa_secret,
-            provider, provider_user_id, display_name, profile_image, bio,
-            account_locked, failed_login_attempts, last_login, password_changed_at,
-            password_history, password_expires_at, require_password_change, status,
-            created_at, updated_at
+            id, username, email, password_hash, mfa_enabled, mfa_secret,
+        account_locked, failed_login_attempts, last_login, created_at, updated_at,
+        password_changed_at, password_history, password_expires_at, require_password_change,
+        false as email_verified, null as provider_name, null as provider_user_id,
+        null as display_name, null as avatar_url, null as refresh_token,
+        null as profile_image, 'active' as "status: Option<UserStatus>"
         FROM users
         ORDER BY created_at DESC
         LIMIT $1 OFFSET $2
         "#,
-        limit,
-        offset
-    )
-            .fetch_all(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+            limit,
+            offset
+        )
+        .fetch_all(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
         Ok(users)
     }
 
     async fn count_users(&self) -> Result<i64, UserError> {
-        let count = sqlx::query!(
-        r#"
-        SELECT COUNT(*) as count
+        let record = sqlx::query!(
+            r#"
+        SELECT COUNT(*) as "count!: i64"
         FROM users
         "#
-    )
-            .fetch_one(&*self.pool)
-            .await
-            .map_err(Into::into)?;
-        .count;
+        )
+        .fetch_one(&*self.pool)
+        .await
+        .map_err(Into::into)?;
 
-        Ok(count)
+        Ok(record.count)
     }
 }
 
@@ -619,7 +626,7 @@ mod tests {
             status: Default::default(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            provider_name: "".to_string()
+            provider_name: "".to_string(),
         };
 
         repo.create(&user).await.unwrap();
