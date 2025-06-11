@@ -15,11 +15,11 @@ pub mod sms;
 pub mod totp;
 pub mod webauthn;
 
-pub use backup_codes::{BackupCodeError, BackupCodeService, UserBackupCodes};
-pub use totp::{MfaType, TotpError, TotpService, UserTotp};
+pub use backup_codes::{BackupCodeError, BackupCodeService};
+pub use totp::{MfaType, TotpError, TotpService};
 
-use deadpool_postgres::Client;
 use serde::{Deserialize, Serialize};
+use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -117,17 +117,17 @@ impl MfaService {
 
     /// Verify MFA during authentication
     pub async fn verify_authentication(
-        client: &Client,
+        pool: &Pool<Postgres>,
         user_id: Uuid,
         mfa_type: MfaType,
         code: &str,
     ) -> Result<bool, MfaError> {
         match mfa_type {
-            MfaType::Totp => TotpService::verify_authentication(client, user_id, code)
+            MfaType::Totp => TotpService::verify_authentication(pool, user_id, code)
                 .await
                 .map_err(MfaError::from),
             MfaType::BackupCode => {
-                BackupCodeService::verify_code(client, user_id, code).await.map_err(MfaError::from)
+                BackupCodeService::verify_code(pool, user_id, code).await.map_err(MfaError::from)
             },
             // Other methods not yet implemented
             _ => Err(MfaError::VerificationFailed),
