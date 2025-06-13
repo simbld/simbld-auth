@@ -3,16 +3,19 @@
 //! This module provides recovery codes for when users lose access to their MFA devices.
 //! It generates, stores, and validates recovery codes.
 
-use argon2::{self, Config as Argon2Config};
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::mfa::MfaMethod;
-use crate::config::AppConfig;
-use crate::errors::ApiError;
+use crate::postgres::config::AppConfig;
+use crate::user::error::ApiError;
 
 /// Provider for recovery codes
 #[derive(Debug, Clone)]
@@ -30,7 +33,7 @@ pub struct RecoveryCodeProvider {
     character_set: RecoveryCodeCharset,
 
     /// Argon2 configuration for hashing codes
-    argon2_config: Argon2Config<'static>,
+    argon2_config: Argon2<'static>,
 }
 
 /// Recovery code character set options
@@ -322,7 +325,6 @@ impl MfaMethod for RecoveryCodeProvider {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use std::sync::{Arc, Mutex};
 
     // Test the recovery code provider creation
     #[test]
