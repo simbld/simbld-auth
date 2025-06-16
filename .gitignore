@@ -23,6 +23,7 @@ Cargo.lock
 # ignore
 .dockerignore
 .TODO
+/learning
 
 # dependencies
 /node_modules
