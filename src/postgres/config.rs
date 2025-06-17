@@ -3,7 +3,7 @@
 //! This module handles the creation and configuration of a connection pool
 //! for PostgreSQL database access.
 
-use deadpool_postgres::{Config, Pool, PoolConfig, Runtime};
+pub(crate) use deadpool_postgres::{Config, Pool, PoolConfig, Runtime};
 use std::env;
 use std::time::Duration;
 use tokio_postgres::{tls::MakeTlsConnect, NoTls, Socket};
