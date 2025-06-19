@@ -23,17 +23,11 @@ pub fn load_config() -> Result<AppConfig, ApiError> {
 
 fn load_mfa_config() -> MfaConfig {
     MfaConfig {
-        recovery_code_count: env::var("MFA_RECOVERY_CODE_COUNT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or(Some(8)),
+        count: env::var("MFA_RECOVERY_CODE_COUNT").ok().and_then(|s| s.parse().ok()).or(Some(8)),
 
-        recovery_code_length: env::var("MFA_RECOVERY_CODE_LENGTH")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or(Some(10)),
+        length: env::var("MFA_RECOVERY_CODE_LENGTH").ok().and_then(|s| s.parse().ok()).or(Some(10)),
 
-        recovery_code_use_separators: env::var("MFA_USE_SEPARATORS")
+        use_separators: env::var("MFA_USE_SEPARATORS")
             .ok()
             .and_then(|s| s.parse().ok())
             .or(Some(true)),
