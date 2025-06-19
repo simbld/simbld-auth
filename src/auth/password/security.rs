@@ -67,12 +67,7 @@ impl PasswordService {
         let argon2 = Argon2::new(
             argon2::Algorithm::Argon2id,
             argon2::Version::V0x13,
-            argon2::Params::new(
-                ARGON2_MEMORY_COST,
-                ARGON2_TIME_COST,
-                ARGON2_PARALLELISM,
-                None,
-            )
+            argon2::Params::new(ARGON2_MEMORY_COST, ARGON2_TIME_COST, ARGON2_PARALLELISM, None)
                 .unwrap(),
         );
 
@@ -84,13 +79,11 @@ impl PasswordService {
 
     /// Verify a password against a previously generated hash
     pub fn verify_password(password: &str, hash: &str) -> Result<bool, PasswordError> {
-        let parsed_hash = PasswordHash::new(hash)
-            .map_err(|e| PasswordError::VerificationError(e.to_string()))?;
+        let parsed_hash =
+            PasswordHash::new(hash).map_err(|e| PasswordError::VerificationError(e.to_string()))?;
 
         // Argon2id verification
-        Ok(Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_ok())
+        Ok(Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok())
     }
 
     /// Estimate the strength of a password using zxcvbn
@@ -102,7 +95,7 @@ impl PasswordService {
                 score: 4,
                 ..Default::default()
             }
-                .into()
+            .into()
         });
 
         PasswordStrength::from(result.score())
@@ -157,7 +150,9 @@ impl PasswordService {
                     }
                     Ok(false) // Not found in breached passwords
                 } else {
-                    Err(PasswordError::VerificationError("Failed to parse API response".to_string()))
+                    Err(PasswordError::VerificationError(
+                        "Failed to parse API response".to_string(),
+                    ))
                 }
             },
             Err(e) => Err(PasswordError::VerificationError(format!("API request failed: {}", e))),
@@ -176,8 +171,8 @@ mod tests {
         let hash = PasswordService::hash_password(password).expect("Failed to hash password");
 
         // Verify correct password
-        let is_valid = PasswordService::verify_password(password, &hash)
-            .expect("Failed to verify password");
+        let is_valid =
+            PasswordService::verify_password(password, &hash).expect("Failed to verify password");
         assert!(is_valid, "Password verification should succeed");
 
         // Verify incorrect password
@@ -204,18 +199,15 @@ mod tests {
     #[test]
     fn test_strength_requirements() {
         let weak_pass = "password123";
-        let result = PasswordService::meets_strength_requirements(
-            weak_pass,
-            &[],
-            PasswordStrength::Strong
-        );
+        let result =
+            PasswordService::meets_strength_requirements(weak_pass, &[], PasswordStrength::Strong);
         assert!(result.is_err());
 
         let strong_pass = "xkT5$p!7ZQm@2LnP";
         let result = PasswordService::meets_strength_requirements(
             strong_pass,
             &[],
-            PasswordStrength::Medium
+            PasswordStrength::Medium,
         );
         assert!(result.is_ok());
     }

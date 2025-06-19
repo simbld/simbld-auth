@@ -1,7 +1,12 @@
-pub mod user;
-pub mod user_controller;
-pub mod user_dto;
-pub mod user_methods;
-pub mod user_repository;
-pub mod user_routes;
-pub mod user_service;
+//! User module
+//!
+//! This module handles user-related functionality including user management,
+//! authentication, and authorization.
+
+pub mod dto;
+pub mod error;
+pub mod handlers;
+pub mod model;
+pub mod repository;
+pub mod routes;
+pub mod service;
