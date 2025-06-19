@@ -2,19 +2,32 @@ mod config;
 mod database;
 mod types;
 
+use crate::database::Database;
 use config::load_config;
 
-fn main() {
+#[tokio::main]
+async fn main() {
+    dotenvy::dotenv().ok();
+
     match load_config() {
         Ok(config) => {
             println!("✅ Loaded config !");
-            println!("URL DB: {}", config.database_url);
-            println!("MFA codes: {:?}", config.mfa.recovery_code_count);
-            println!("MFA length: {:?}", config.mfa.recovery_code_length);
-            println!("MFA separators: {:?}", config.mfa.recovery_code_use_separators);
+
+            match Database::new(&config.database_url).await {
+                Ok(db) => {
+                    println!("✅ Database connection established successfully.");
+
+                    if let Err(e) = db.setup_tables().await {
+                        println!("❌ Failed to setup tables: {e}");
+                    }
+                },
+                Err(e) => {
+                    println!("❌ Failed to connect to the database: {e}");
+                },
+            }
         },
         Err(e) => {
-            println!("❌ Error: {}", e);
+            println!("❌ Error: {e}");
         },
     }
 }
