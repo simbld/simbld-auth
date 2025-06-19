@@ -30,9 +30,9 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone)]
 pub struct MfaConfig {
-    pub recovery_code_count: Option<usize>,
-    pub recovery_code_length: Option<usize>,
-    pub recovery_code_use_separators: Option<bool>,
+    pub count: Option<usize>,
+    pub length: Option<usize>,
+    pub use_separators: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -47,9 +47,9 @@ impl Default for AppConfig {
 impl Default for MfaConfig {
     fn default() -> Self {
         Self {
-            recovery_code_count: Some(8),
-            recovery_code_length: Some(10),
-            recovery_code_use_separators: Some(true),
+            count: Some(8),
+            length: Some(10),
+            use_separators: Some(true),
         }
     }
 }
