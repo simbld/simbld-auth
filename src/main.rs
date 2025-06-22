@@ -1,14 +1,11 @@
 use actix_web::{web, App, HttpServer, Responder};
-use dotenv::dotenv;
-use env_logger;
+use dotenvy::dotenv;
 use std::time::Duration;
 
-// Vos imports
-use simbld_http::middlewares::{AuthMiddleware, HttpInterceptor, UnifiedMiddleware};
 use simbld_http::responses::{
     ResponsesClientCodes, ResponsesLocalApiCodes, ResponsesServerCodes, ResponsesSuccessCodes,
 };
-use simbld_http::UnifiedMiddleware;
+use simbld_http::{AuthMiddleware, HttpInterceptor, UnifiedMiddleware};
 
 // Structs pour l'auth
 #[derive(serde::Deserialize)]
@@ -109,22 +106,22 @@ enum AuthError {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenvy::dotenv().ok();
+    dotenv().ok();
     env_logger::init();
 
     let bind_address =
         std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
 
-    let cors_origins = std::env::var("CORS_ORIGINS")
+    let cors_origins: Vec<String> = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "*".to_string())
         .split(',')
         .map(|s| s.to_string())
         .collect();
 
-    let rate_limit: u32 =
+    let rate_limit: usize =
         std::env::var("RATE_LIMIT").unwrap_or_else(|_| "100".to_string()).parse().unwrap_or(100);
 
-    println!("🚀 Serveur démarré sur {}", bind_address);
+    println!("🚀 Serveur démarré sur bind_address{}", bind_address);
     println!("📊 Rate limit: {} req/min", rate_limit);
 
     HttpServer::new(move || {
