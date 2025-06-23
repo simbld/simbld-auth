@@ -1,13 +1,18 @@
+mod config;
+mod database;
+mod types;
+
 use actix_web::{web, App, HttpServer, Responder};
 use dotenvy::dotenv;
+use std::sync::Arc;
 use std::time::Duration;
 
+use crate::database::Database;
 use simbld_http::responses::{
     ResponsesClientCodes, ResponsesLocalApiCodes, ResponsesServerCodes, ResponsesSuccessCodes,
 };
 use simbld_http::{AuthMiddleware, HttpInterceptor, UnifiedMiddleware};
 
-// Structs pour l'auth
 #[derive(serde::Deserialize)]
 struct CreateUser {
     email: String,
@@ -22,33 +27,36 @@ struct LoginCredentials {
     password: String,
 }
 
-// Handlers avec VOS codes
-async fn register_user(user_data: web::Json<CreateUser>) -> impl Responder {
+/// Register a new user
+async fn register_user(
+    user_data: web::Json<CreateUser>,
+    db: web::Data<Arc<Database>>,
+) -> impl Responder {
     match validate_user(&user_data).await {
-        Ok(_) => {
-            // ✅ Utilisateur créé avec votre code précis !
+        Ok(()) => {
+            println!(
+                "👤 New user: {first_name} {last_name}",
+                first_name = user_data.first_name,
+                last_name = user_data.last_name
+            );
             ResponsesSuccessCodes::Created.into_response()
         },
-        Err(ValidationError::EmailExists) => {
-            // ✅ Email existe déjà
-            ResponsesClientCodes::Conflict.into_response()
-        },
-        Err(ValidationError::InvalidEmail) => {
-            // ✅ Votre code spécialisé !
-            ResponsesLocalApiCodes::InvalidEmail.into_response()
-        },
+        Err(ValidationError::EmailExists) => ResponsesClientCodes::Conflict.into_response(),
+        Err(ValidationError::InvalidEmail) => ResponsesLocalApiCodes::InvalidEmail.into_response(),
         Err(ValidationError::WeakPassword) => {
-            // ✅ Votre code spécialisé !
             ResponsesLocalApiCodes::InvalidPassword.into_response()
         },
     }
 }
 
-async fn login_user(credentials: web::Json<LoginCredentials>) -> impl Responder {
+/// Log in a user
+async fn login_user(
+    credentials: web::Json<LoginCredentials>,
+    db: web::Data<Arc<Database>>,
+) -> impl Responder {
     match authenticate(&credentials).await {
-        Ok(_) => ResponsesSuccessCodes::Ok.into_response(),
+        Ok(()) => ResponsesSuccessCodes::Ok.into_response(),
         Err(AuthError::InvalidCredentials) => {
-            // ✅ Auth échouée - votre code spécialisé !
             ResponsesLocalApiCodes::AuthentificationFailed.into_response()
         },
         Err(AuthError::AccountLocked) => ResponsesClientCodes::Forbidden.into_response(),
@@ -71,7 +79,7 @@ async fn validate_user(user: &CreateUser) -> Result<(), ValidationError> {
         return Err(ValidationError::WeakPassword);
     }
 
-    // Check email exists (simulation)
+    // Check email exists
     if user.email == "test@example.com" {
         return Err(ValidationError::EmailExists);
     }
@@ -109,23 +117,33 @@ async fn main() -> std::io::Result<()> {
     dotenv().ok();
     env_logger::init();
 
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://localhost/simbld_auth".to_string());
+
+    let database = Database::new(&database_url).await.expect("Failed to connect to the database");
+
+    database.setup_tables().await.expect("Failed to setup database tables");
+
+    let db_data = web::Data::new(Arc::new(database));
+
     let bind_address =
         std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
 
     let cors_origins: Vec<String> = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "*".to_string())
         .split(',')
-        .map(|s| s.to_string())
+        .map(str::to_string)
         .collect();
 
     let rate_limit: usize =
         std::env::var("RATE_LIMIT").unwrap_or_else(|_| "100".to_string()).parse().unwrap_or(100);
 
-    println!("🚀 Serveur démarré sur bind_address{}", bind_address);
-    println!("📊 Rate limit: {} req/min", rate_limit);
+    println!("🚀 Server started on {bind_address}");
+    println!("📊 Rate limit: {rate_limit} req/min");
 
     HttpServer::new(move || {
         App::new()
+            .app_data(db_data.clone())
             .wrap(UnifiedMiddleware::simple(
                 cors_origins.clone(),
                 rate_limit,
