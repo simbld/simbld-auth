@@ -43,4 +43,32 @@ impl Database {
         println!("✅ Tables created successfully!");
         Ok(())
     }
+
+    pub async fn user_exists(&self, email: &str) -> Result<Bool, ApiError> {
+        let result = sqlx::query!("SELECT COUNT(*) as count FROM users WHERE email = $1", email)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Failed to check user existence: {e}")))?;
+
+        Ok(result.count.unwrap_or(0) > 0)
+    }
+
+    pub async fn create_user(
+        &self,
+        email: &str,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<i32, ApiError> {
+        let result = sqlx::query!(
+            "INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id",
+            email,
+            username,
+            password_hash
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| ApiError::Database(format!("Failed to create user: {e}")))?;
+
+        Ok(result.id)
+    }
 }
