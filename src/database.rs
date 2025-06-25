@@ -24,13 +24,18 @@ impl Database {
     }
 
     pub async fn setup_tables(&self) -> Result<(), ApiError> {
+        sqlx::query("DROP TABLE IF EXISTS test_users CASCADE")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Failed to drop tables: {e}")))?;
+
         sqlx::query!(
             r#"
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE test_users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(255) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
+                password VARCHAR(255) NOT NULL,
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
@@ -44,11 +49,12 @@ impl Database {
         Ok(())
     }
 
-    pub async fn user_exists(&self, email: &str) -> Result<Bool, ApiError> {
-        let result = sqlx::query!("SELECT COUNT(*) as count FROM users WHERE email = $1", email)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| ApiError::Database(format!("Failed to check user existence: {e}")))?;
+    pub async fn user_exists(&self, email: &str) -> Result<bool, ApiError> {
+        let result =
+            sqlx::query!("SELECT COUNT(*) as count FROM test_users WHERE email = $1", email)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| ApiError::Database(format!("Failed to check user existence: {e}")))?;
 
         Ok(result.count.unwrap_or(0) > 0)
     }
@@ -57,18 +63,31 @@ impl Database {
         &self,
         email: &str,
         username: &str,
-        password_hash: &str,
+        password: &str,
     ) -> Result<i32, ApiError> {
         let result = sqlx::query!(
-            "INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id",
+            "INSERT INTO test_users (email, username, password) VALUES ($1, $2, $3) RETURNING id",
             email,
             username,
-            password_hash
+            password
         )
         .fetch_one(&self.pool)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to create user: {e}")))?;
 
         Ok(result.id)
+    }
+
+    pub async fn verify_user_login(&self, email: &str, password: &str) -> Result<bool, ApiError> {
+        let result = sqlx::query!(
+            "SELECT COUNT(*) as count FROM test_users WHERE email = $1 AND password = $2",
+            email,
+            password
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| ApiError::Database(format!("Failed to verify user login: {e}")))?;
+
+        Ok(result.count.unwrap_or(0) > 0)
     }
 }
