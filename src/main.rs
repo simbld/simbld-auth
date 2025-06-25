@@ -32,14 +32,25 @@ async fn register_user(
     user_data: web::Json<CreateUser>,
     db: web::Data<Arc<Database>>,
 ) -> impl Responder {
-    match validate_user(&user_data).await {
+    match validate_user(&user_data, &db).await {
         Ok(()) => {
-            println!(
-                "👤 New user: {first_name} {last_name}",
-                first_name = user_data.first_name,
-                last_name = user_data.last_name
-            );
-            ResponsesSuccessCodes::Created.into_response()
+            // Simulate user creation in the database
+            match db.create_user(&user_data.email, &user_data.first_name, &user_data.password).await
+            {
+                Ok(user_id) => {
+                    println!(
+                        "👤 New user created: {first_name} {last_name} {user_id}",
+                        first_name = user_data.first_name,
+                        last_name = user_data.last_name,
+                        user_id = user_id
+                    );
+                    ResponsesSuccessCodes::Created.into_response()
+                },
+                Err(e) => {
+                    println!("❌ Failed to create user: {e}");
+                    ResponsesServerCodes::InternalServerError.into_response()
+                },
+            }
         },
         Err(ValidationError::EmailExists) => ResponsesClientCodes::Conflict.into_response(),
         Err(ValidationError::InvalidEmail) => ResponsesLocalApiCodes::InvalidEmail.into_response(),
@@ -54,7 +65,7 @@ async fn login_user(
     credentials: web::Json<LoginCredentials>,
     db: web::Data<Arc<Database>>,
 ) -> impl Responder {
-    match authenticate(&credentials).await {
+    match authenticate(&credentials, &db).await {
         Ok(()) => ResponsesSuccessCodes::Ok.into_response(),
         Err(AuthError::InvalidCredentials) => {
             ResponsesLocalApiCodes::AuthentificationFailed.into_response()
@@ -65,22 +76,22 @@ async fn login_user(
 }
 
 /// Validate user input
-async fn validate_user(user: &CreateUser) -> Result<(), ValidationError> {
+async fn validate_user(user_data: &CreateUser, db: &Database) -> Result<(), ValidationError> {
     use regex::Regex;
 
     // Email regex
     let email_regex = Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").unwrap();
-    if !email_regex.is_match(&user.email) {
+    if !email_regex.is_match(&user_data.email) {
         return Err(ValidationError::InvalidEmail);
     }
 
     // Password strength
-    if user.password.len() < 8 {
+    if user_data.password.len() < 8 {
         return Err(ValidationError::WeakPassword);
     }
 
     // Check email exists
-    if user.email == "test@example.com" {
+    if db.user_exists(&user_data.email).await.unwrap_or(false) {
         return Err(ValidationError::EmailExists);
     }
 
@@ -88,11 +99,9 @@ async fn validate_user(user: &CreateUser) -> Result<(), ValidationError> {
 }
 
 /// Simulated authentication function
-async fn authenticate(credentials: &LoginCredentials) -> Result<(), AuthError> {
-    if credentials.email == "user@test.com" && credentials.password == "password123" {
+async fn authenticate(credentials: &LoginCredentials, db: &Database) -> Result<(), AuthError> {
+    if db.verify_user_login(&credentials.email, &credentials.password).await.unwrap_or(false) {
         Ok(())
-    } else if credentials.email == "locked@test.com" {
-        Err(AuthError::AccountLocked)
     } else {
         Err(AuthError::InvalidCredentials)
     }
