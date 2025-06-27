@@ -1,5 +1,5 @@
 use crate::types::ApiError;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 
 pub struct Database {
     pool: PgPool,
@@ -29,7 +29,7 @@ impl Database {
             .await
             .map_err(|e| ApiError::Database(format!("Failed to drop tables: {e}")))?;
 
-        sqlx::query!(
+        sqlx::query(
             r#"
             CREATE TABLE test_users (
                 id SERIAL PRIMARY KEY,
@@ -39,7 +39,7 @@ impl Database {
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
-"#
+"#,
         )
         .execute(&self.pool)
         .await
@@ -50,13 +50,17 @@ impl Database {
     }
 
     pub async fn user_exists(&self, email: &str) -> Result<bool, ApiError> {
-        let result =
-            sqlx::query!("SELECT COUNT(*) as count FROM test_users WHERE email = $1", email)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| ApiError::Database(format!("Failed to check user existence: {e}")))?;
+        let result = sqlx::query("SELECT COUNT(*) as count FROM test_users WHERE email = $1")
+            .bind(email)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Failed to check user existence: {e}")))?;
 
-        Ok(result.count.unwrap_or(0) > 0)
+        let count: i64 = result
+            .try_get("count")
+            .map_err(|e| ApiError::Database(format!("Failed to get count: {e}")))?;
+
+        Ok(count > 0)
     }
 
     pub async fn create_user(
@@ -65,29 +69,37 @@ impl Database {
         username: &str,
         password: &str,
     ) -> Result<i32, ApiError> {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             "INSERT INTO test_users (email, username, password) VALUES ($1, $2, $3) RETURNING id",
-            email,
-            username,
-            password
         )
+        .bind(email)
+        .bind(username)
+        .bind(password)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to create user: {e}")))?;
 
-        Ok(result.id)
+        let id: i32 = result
+            .try_get("id")
+            .map_err(|e| ApiError::Database(format!("Failed to get user ID: {e}")))?;
+
+        Ok(id)
     }
 
     pub async fn verify_user_login(&self, email: &str, password: &str) -> Result<bool, ApiError> {
-        let result = sqlx::query!(
+        let result = sqlx::query(
             "SELECT COUNT(*) as count FROM test_users WHERE email = $1 AND password = $2",
-            email,
-            password
         )
+        .bind(email)
+        .bind(password)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to verify user login: {e}")))?;
 
-        Ok(result.count.unwrap_or(0) > 0)
+        let count: i64 = result
+            .try_get("count")
+            .map_err(|e| ApiError::Database(format!("Failed to get count: {e}")))?;
+
+        Ok(count > 0)
     }
 }
