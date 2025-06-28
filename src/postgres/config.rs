@@ -1,81 +1,184 @@
-//! PostgreSQL connection pool configuration and setup
+//! Configuration management for simbld_auth
 //!
-//! This module handles the creation and configuration of a connection pool
-//! for PostgreSQL database access.
+//! Handles loading and validation of app configuration from environment variables
+//! with sensible defaults and comprehensive error handling.
 
-pub(crate) use deadpool_postgres::{Config, Pool, PoolConfig, Runtime};
+use crate::types::{ApiError, AppConfig, MfaConfig, ServerConfig};
 use std::env;
 use std::time::Duration;
-use tokio_postgres::{tls::MakeTlsConnect, NoTls, Socket};
 
-/// Default values for database configuration
-const DEFAULT_PORT: u16 = 5432;
-const DEFAULT_MAX_CONNECTIONS: usize = 16;
-const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 5;
+/// Load complete app configuration
+pub fn load_config() -> Result<AppConfig, ApiError> {
+    let config = AppConfig {
+        database_url: load_database_url(),
+        server: load_server_config(),
+        mfa: load_mfa_config(),
+        jwt_secret: load_jwt_secret()?,
+        cors_origins: load_cors_origins(),
+        rate_limit: load_rate_limit(),
+        log_level: load_log_level(),
+    };
 
-/// Creates a PostgreSQL connection pool configured from environment variables
-///
-/// Environment variables:
-/// - PG_HOST: Database host (required)
-/// - PG_PORT: Database port (optional, default: 5432)
-/// - PG_USER: Database user (required)
-/// - PG_PASSWORD: Database password (required)
-/// - PG_DBNAME: Database name (required)
-/// - PG_MAX_CONNECTIONS: Maximum connections in pool (optional, default: 16)
-/// - PG_CONNECT_TIMEOUT: Connection timeout in seconds (optional, default: 5)
-pub fn create_pool() -> Pool {
-    create_pool_with_tls(NoTls)
+    validate_config(&config)?;
+    Ok(config)
 }
 
-/// Creates a PostgreSQL connection pool with TLS support
-pub fn create_pool_with_tls<T>(tls: T) -> Pool
-where
-    T: MakeTlsConnect<Socket> + Send + Sync + 'static,
-    <T as MakeTlsConnect<Socket>>::TlsConnect: Send,
-    <T as MakeTlsConnect<Socket>>::Stream: Send + Sync,
-{
-    let mut cfg = Config::new();
-
-    // Load required configurations from environment variables
-    cfg.host = Some(env::var("PG_HOST").expect("PG_HOST must be set"));
-    cfg.user = Some(env::var("PG_USER").expect("PG_USER must be set"));
-    cfg.password = Some(env::var("PG_PASSWORD").expect("PG_PASSWORD must be set"));
-    cfg.dbname = Some(env::var("PG_DBNAME").expect("PG_DBNAME must be set"));
-
-    // Load optional configurations with defaults
-    cfg.port = Some(env::var("PG_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(DEFAULT_PORT));
-
-    // Configure connection pool parameters
-    let max_connections = env::var("PG_MAX_CONNECTIONS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_MAX_CONNECTIONS);
-
-    let connect_timeout = env::var("PG_CONNECT_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_CONNECT_TIMEOUT_SECS);
-
-    let pool_config = PoolConfig::new(max_connections);
-    cfg.pool = Some(pool_config);
-
-    // Set connection timeout
-    cfg.connect_timeout = Some(Duration::from_secs(connect_timeout));
-
-    // Create the connection pool
-    cfg.create_pool(Some(Runtime::Tokio1), tls)
-        .expect("Failed to create PostgreSQL connection pool")
+/// Load database configuration
+fn load_database_url() -> String {
+    env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://localhost/simbld_auth".to_string())
 }
 
-/// Checks if the database connection is working
-pub async fn health_check(pool: &Pool) -> Result<(), String> {
-    let client =
-        pool.get().await.map_err(|e| format!("Failed to get database connection: {}", e))?;
+/// Load server configuration
+fn load_server_config() -> ServerConfig {
+    ServerConfig {
+        host: env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
+        port: env::var("SERVER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080),
+        workers: env::var("SERVER_WORKERS")
+            .ok()
+            .and_then(|w| w.parse().ok())
+            .unwrap_or(num_cpus::get()),
+        keep_alive: Duration::from_secs(
+            env::var("SERVER_KEEP_ALIVE").ok().and_then(|ka| ka.parse().ok()).unwrap_or(30),
+        ),
+    }
+}
 
-    client
-        .query_one("SELECT 1", &[])
-        .await
-        .map_err(|e| format!("Database health check failed: {}", e))?;
+/// Load MFA configuration
+fn load_mfa_config() -> MfaConfig {
+    MfaConfig {
+        recovery_code_count: env::var("MFA_RECOVERY_CODE_COUNT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8),
+        recovery_code_length: env::var("MFA_RECOVERY_CODE_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10),
+        use_separators: env::var("MFA_USE_SEPARATORS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(true),
+        totp_window: env::var("MFA_TOTP_WINDOW").ok().and_then(|s| s.parse().ok()).unwrap_or(1),
+        max_backup_codes: env::var("MFA_MAX_BACKUP_CODES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10),
+    }
+}
 
+/// Load JWT secret (required)
+fn load_jwt_secret() -> Result<String, ApiError> {
+    env::var("JWT_SECRET").map_err(|_| ApiError::Config {
+        message: "JWT_SECRET environment variable is required".to_string(),
+    })
+}
+
+/// Load CORS origins
+fn load_cors_origins() -> Vec<String> {
+    env::var("CORS_ORIGINS")
+        .unwrap_or_else(|_| "*".to_string())
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect()
+}
+
+/// Load rate limiting configuration
+fn load_rate_limit() -> usize {
+    env::var("RATE_LIMIT").ok().and_then(|s| s.parse().ok()).unwrap_or(100)
+}
+
+/// Load log level
+fn load_log_level() -> String {
+    env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string())
+}
+
+/// Validate configuration values
+fn validate_config(config: &AppConfig) -> Result<(), ApiError> {
+    // Validate database URL
+    if config.database_url.is_empty() {
+        return Err(ApiError::Config {
+            message: "Database URL can't be empty".to_string(),
+        });
+    }
+
+    // Validate JWT secret
+    if config.jwt_secret.len() < 32 {
+        return Err(ApiError::Config {
+            message: "JWT secret must be at least 32 characters long".to_string(),
+        });
+    }
+
+    // Validate server configuration
+    if config.server.port == 0 || config.server.port > 65535 {
+        return Err(ApiError::Config {
+            message: "Server port must be between 1 and 65,535".to_string(),
+        });
+    }
+
+    // Validate MFA configuration
+    if config.mfa.recovery_code_count == 0 || config.mfa.recovery_code_count > 20 {
+        return Err(ApiError::Config {
+            message: "MFA recovery code count must be between 1 and 20".to_string(),
+        });
+    }
+
+    if config.mfa.recovery_code_length < 8 || config.mfa.recovery_code_length > 32 {
+        return Err(ApiError::Config {
+            message: "MFA recovery code length must be between 8 and 32".to_string(),
+        });
+    }
+
+    println!("✅ Configuration validated successfully");
     Ok(())
+}
+
+/// Get bind address from configuration
+pub fn get_bind_address(config: &AppConfig) -> String {
+    format!("{}:{}", config.server.host, config.server.port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_load_config_with_defaults() {
+        // Set required environment variables
+        env::set_var("JWT_SECRET", "test_secret_key_that_is_long_enough_32_chars");
+
+        let config = load_config().expect("Config should load with defaults");
+
+        assert!(!config.database_url.is_empty());
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert_eq!(config.server.port, 8080);
+        assert_eq!(config.mfa.recovery_code_count, 8);
+    }
+
+    #[test]
+    fn test_validate_config_invalid_jwt_secret() {
+        let config = AppConfig {
+            database_url: "postgresql://localhost/test".to_string(),
+            server: ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 8080,
+                workers: 1,
+                keep_alive: Duration::from_secs(30),
+            },
+            mfa: MfaConfig {
+                recovery_code_count: 8,
+                recovery_code_length: 10,
+                use_separators: true,
+                totp_window: 1,
+                max_backup_codes: 10,
+            },
+            jwt_secret: "too_short".to_string(), // Too short
+            cors_origins: vec!["*".to_string()],
+            rate_limit: 100,
+            log_level: "info".to_string(),
+        };
+
+        let result = validate_config(&config);
+        assert!(result.is_err());
+    }
 }
