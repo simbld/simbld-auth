@@ -2,31 +2,34 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TYPE user_status AS ENUM ('active', 'inactive', 'suspended', 'pending');
 
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(50) NOT NULL,
-    bio TEXT,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    email_verified          BOOLEAN NOT NULL DEFAULT FALSE,
-    password_hash VARCHAR(255) NOT NULL,
+CREATE TABLE IF NOT EXISTS users
+(
+    id                      UUID PRIMARY KEY                  DEFAULT gen_random_uuid(),
+    username                VARCHAR(50)              NOT NULL,
+    firstname               VARCHAR(100)             NOT NULL,
+    lastname                VARCHAR(100)             NOT NULL,
+    bio                     TEXT,
+    email                   VARCHAR(255) UNIQUE      NOT NULL,
+    email_verified          BOOLEAN                  NOT NULL DEFAULT FALSE,
+    password                VARCHAR(255)             NOT NULL,
     password_changed_at     TIMESTAMP WITH TIME ZONE,
     password_expires_at     TIMESTAMP WITH TIME ZONE,
-    require_password_change BOOLEAN NOT NULL DEFAULT FALSE,
-    password_history        JSONB            DEFAULT '[]'::jsonb,
+    require_password_change BOOLEAN                  NOT NULL DEFAULT FALSE,
+    password_history        JSONB                             DEFAULT '[]'::jsonb,
     display_name            VARCHAR(100),
     profile_image           VARCHAR(255),
     avatar_url              VARCHAR(255),
     provider_name           VARCHAR(50),
     provider_user_id        VARCHAR(255),
     refresh_token           TEXT,
-    mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    mfa_secret VARCHAR(255),
-    account_locked BOOLEAN NOT NULL DEFAULT FALSE,
-    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-    last_login TIMESTAMP WITH TIME ZONE,
-    status                  user_status      DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    mfa_enabled             BOOLEAN                  NOT NULL DEFAULT FALSE,
+    mfa_secret              VARCHAR(255),
+    account_locked          BOOLEAN                  NOT NULL DEFAULT FALSE,
+    failed_login_attempts   INTEGER                  NOT NULL DEFAULT 0,
+    last_login              TIMESTAMP WITH TIME ZONE,
+    status                  user_status                       DEFAULT 'active',
+    created_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Index to improve the performance of current research
