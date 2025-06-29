@@ -84,7 +84,7 @@ impl Database {
 
     /// Verify user login with secure password verification
     pub async fn verify_user_login(&self, email: &str, password: &str) -> Result<bool, ApiError> {
-        // 🔒 Get user's hashed password from database
+        // 🔒 Get a user's hashed password from a database
         let result = sqlx::query("SELECT password FROM users WHERE email = $1")
             .bind(email)
             .fetch_optional(&self.pool)
@@ -119,18 +119,42 @@ impl Database {
 
         if let Some(row) = result {
             Ok(Some(UserRecord {
-                id: row.try_get("id")?,
-                email: row.try_get("email")?,
-                username: row.try_get("username")?,
-                firstname: row.try_get("firstname")?,
-                lastname: row.try_get("lastname")?,
-                password_hash: row.try_get("password")?,
-                email_verified: row.try_get("email_verified")?,
-                mfa_enabled: row.try_get("mfa_enabled")?,
-                account_locked: row.try_get("account_locked")?,
-                failed_login_attempts: row.try_get("failed_login_attempts")?,
-                last_login: row.try_get("last_login")?,
-                status: row.try_get("status")?,
+                id: row
+                    .try_get("id")
+                    .map_err(|e| ApiError::Database(format!("Failed to get id: {e}")))?,
+                email: row
+                    .try_get("email")
+                    .map_err(|e| ApiError::Database(format!("Failed to get email: {e}")))?,
+                username: row
+                    .try_get("username")
+                    .map_err(|e| ApiError::Database(format!("Failed to get username: {e}")))?,
+                firstname: row
+                    .try_get("firstname")
+                    .map_err(|e| ApiError::Database(format!("Failed to get the firstname: {e}")))?,
+                lastname: row
+                    .try_get("lastname")
+                    .map_err(|e| ApiError::Database(format!("Failed to get lastname: {e}")))?,
+                password_hash: row
+                    .try_get("password")
+                    .map_err(|e| ApiError::Database(format!("Failed to get password: {e}")))?,
+                email_verified: row.try_get("email_verified").map_err(|e| {
+                    ApiError::Database(format!("Failed to get email_verified: {e}"))
+                })?,
+                mfa_enabled: row
+                    .try_get("mfa_enabled")
+                    .map_err(|e| ApiError::Database(format!("Failed to get mfa_enabled: {e}")))?,
+                account_locked: row.try_get("account_locked").map_err(|e| {
+                    ApiError::Database(format!("Failed to get account_locked: {e}"))
+                })?,
+                failed_login_attempts: row.try_get("failed_login_attempts").map_err(|e| {
+                    ApiError::Database(format!("Failed to get failed_login_attempts: {e}"))
+                })?,
+                last_login: row
+                    .try_get("last_login")
+                    .map_err(|e| ApiError::Database(format!("Failed to get last_login: {e}")))?,
+                status: row
+                    .try_get("status")
+                    .map_err(|e| ApiError::Database(format!("Failed to get status: {e}")))?,
             }))
         } else {
             Ok(None)
