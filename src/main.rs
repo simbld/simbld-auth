@@ -10,6 +10,7 @@ mod user;
 use crate::postgres::config;
 use actix_web::{web, App, HttpServer};
 use dotenvy::dotenv;
+use simbld_http::responses::ResponsesSuccessCodes;
 use std::sync::Arc;
 
 #[actix_web::main]
@@ -48,6 +49,5 @@ async fn main() -> std::io::Result<()> {
 
 /// Health check endpoint
 async fn health_check() -> impl actix_web::Responder {
-    use simbld_http::responses::ResponsesSuccessCodes;
     ResponsesSuccessCodes::Ok.into_response()
 }
