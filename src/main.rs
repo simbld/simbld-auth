@@ -7,11 +7,15 @@ mod postgres;
 mod types;
 mod user;
 
+use crate::auth::handlers;
 use crate::postgres::config;
+use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
 use dotenvy::dotenv;
 use simbld_http::responses::ResponsesSuccessCodes;
+use simbld_http::UnifiedMiddleware;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -38,9 +42,22 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            // Data injection
             .app_data(web::Data::new(db.clone()))
             .app_data(web::Data::new(config.clone()))
-            .route("/health", web::get().to(health_check))
+            .wrap(Logger::default())
+            .wrap(UnifiedMiddleware::simple(
+                config.cors_origins.clone(),
+                config.rate_limit,
+                Duration::from_secs(60),
+            ))
+            // Routes using YOUR API
+            .service(
+                web::scope("/api/v1")
+                    .route("/health", web::get().to(handlers::auth::health_check))
+                    .route("/auth/register", web::post().to(handlers::auth::register))
+                    .route("/auth/login", web::post().to(handlers::auth::login)),
+            )
     })
     .bind(bind_address)?
     .run()
