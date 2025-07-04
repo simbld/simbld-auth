@@ -1,70 +1,88 @@
 //! Simbld_auth Secure Authentication Service
 //!
-//! A comprehensive authentication microservice with multiple provider support
+//! A comprehensive authentication microservice with multiple provider support using simbld_http API
 
-mod auth;
-mod postgres;
-mod types;
-mod user;
+pub mod auth;
+pub mod postgres;
+pub mod types;
+pub mod user;
 
-use crate::auth::handlers;
-use crate::postgres::config;
-use actix_web::middleware::Logger;
-use actix_web::{web, App, HttpServer};
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenvy::dotenv;
-use simbld_http::responses::ResponsesSuccessCodes;
-use simbld_http::UnifiedMiddleware;
-use std::sync::Arc;
-use std::time::Duration;
+use simbld_http::middleware::UnifiedMiddleware;
+use simbld_http::responses::ResponsesServerCodes;
+use std::{sync::Arc, time::Duration};
+pub use types::StartupError;
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), StartupError> {
+    // Initialize environment
     dotenv().ok();
     env_logger::init();
+
+    println!("🚀 Starting simbld_auth server...");
 
     // Load configuration
     let config = config::load_config().map_err(|e| {
         eprintln!("❌ Configuration error: {}", e);
-        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+        eprintln!("   This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::Config(e.to_string())
     })?;
 
     // Connect to database
-    let db = Arc::new(postgres::Database::new(&config.database_url).await.map_err(|e| {
+    let db = postgres::Database::new(&config.database_url).await.map_err(|e| {
         eprintln!("❌ Database connection error: {}", e);
-        std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e.to_string())
-    })?);
+        eprintln!("   This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::Database(e.to_string())
+    })?;
 
+    let db = Arc::new(db);
     let bind_address = config::get_bind_address(&config);
 
-    println!("🚀 simbld_auth server starting on {}", bind_address);
+    // Server info using YOUR response context
+    println!("✅ Configuration loaded - Status: {:?}", ResponsesServerCodes::Ok);
+    println!("✅ Database connected - Status: {:?}", ResponsesServerCodes::Ok);
+    println!("🌐 Server binding to: {}", bind_address);
     println!("📊 Rate limit: {} req/min", config.rate_limit);
     println!("🔗 CORS origins: {:?}", config.cors_origins);
 
-    HttpServer::new(move || {
+    // Start HTTP server
+    let server_result = HttpServer::new(move || {
         App::new()
-            // Data injection
+            // Inject dependencies
             .app_data(web::Data::new(db.clone()))
             .app_data(web::Data::new(config.clone()))
-            .wrap(Logger::default())
+            // YOUR simbld_http middleware stack
             .wrap(UnifiedMiddleware::simple(
                 config.cors_origins.clone(),
                 config.rate_limit,
                 Duration::from_secs(60),
             ))
-            // Routes using YOUR API
+            .wrap(Logger::default())
+            // Routes using YOUR API handlers
             .service(
-                web::scope("/api/v1")
-                    .route("/health", web::get().to(handlers::auth::health_check))
-                    .route("/auth/register", web::post().to(handlers::auth::register))
-                    .route("/auth/login", web::post().to(handlers::auth::login)),
+                web::scope("/api/v1").route("/health", web::get().to(handlers::health_check)), // .route("/auth/register", web::post().to(handlers::auth::register))
+                                                                                               // .route("/auth/login", web::post().to(handlers::auth::login))
             )
+            // Root health check
+            .route("/health", web::get().to(handlers::health_check))
     })
-    .bind(bind_address)?
+    .bind(&bind_address)
+    .map_err(|e| {
+        eprintln!("❌ Server binding error: {}", e);
+        eprintln!("   This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::ServerBind(format!("Failed to bind to {}: {}", bind_address, e))
+    })?
     .run()
-    .await
-}
+    .await;
 
-/// Health check endpoint
-async fn health_check() -> impl actix_web::Responder {
-    ResponsesSuccessCodes::Ok.into_response()
+    // Handle server runtime errors
+    server_result.map_err(|e| {
+        eprintln!("❌ Server runtime error: {}", e);
+        eprintln!("   This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::ServerBind(format!("Server runtime error: {}", e))
+    })?;
+
+    println!("✅ simbld_auth server shutdown complete");
+    Ok(())
 }
