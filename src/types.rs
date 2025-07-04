@@ -8,7 +8,18 @@ use simbld_http::responses::{ResponsesClientCodes, ResponsesServerCodes};
 use std::time::Duration;
 use thiserror::Error;
 
-/// Application-wide error types
+/// Application startup errors
+#[derive(Debug, Error)]
+pub enum StartupError {
+    #[error("Configuration error: {0}")]
+    Config(String),
+    #[error("Database connection error: {0}")]
+    Database(String),
+    #[error("Server binding error: {0}")]
+    ServerBind(String),
+}
+
+/// Runtime API errors
 #[derive(Debug, Error, Clone)]
 pub enum ApiError {
     #[error("Internal server error: {message}")]
@@ -51,7 +62,7 @@ impl ApiError {
     }
 
     /// Convert to appropriate HTTP response
-    pub fn to_response(&self) -> simbld_http::responses::CustomResponse {
+    pub fn to_http_response(&self) -> HttpResponse {
         match self {
             ApiError::Internal {
                 ..
