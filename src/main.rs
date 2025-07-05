@@ -3,14 +3,16 @@
 //! A comprehensive authentication microservice with multiple provider support using simbld_http API
 
 pub mod auth;
+pub mod handlers;
 pub mod postgres;
 pub mod types;
 pub mod user;
 
+use crate::postgres::config;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenvy::dotenv;
-use simbld_http::middleware::UnifiedMiddleware;
 use simbld_http::responses::ResponsesServerCodes;
+use simbld_http::UnifiedMiddleware;
 use std::{sync::Arc, time::Duration};
 pub use types::StartupError;
 
