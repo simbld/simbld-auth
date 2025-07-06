@@ -4,7 +4,7 @@
 //! used throughout the app.
 
 use serde::{Deserialize, Serialize};
-use simbld_http::responses::{ResponsesClientCodes, ResponsesServerCodes};
+use simbld_http::responses::{CustomResponse, ResponsesClientCodes, ResponsesServerCodes};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -62,21 +62,25 @@ impl ApiError {
     }
 
     /// Convert to appropriate HTTP response
-    pub fn to_http_response(&self) -> HttpResponse {
+    pub fn to_http_response(&self) -> CustomResponse {
         match self {
+            // Server errors
             ApiError::Internal {
                 ..
-            } => ResponsesServerCodes::InternalServerError.into_response(),
-            ApiError::Database(_) => ResponsesServerCodes::InternalServerError.into_response(),
-            ApiError::Config {
+            }
+            | ApiError::Database(_)
+            | ApiError::Config {
                 ..
             } => ResponsesServerCodes::InternalServerError.into_response(),
 
-            ApiError::Auth(_) => ResponsesClientCodes::Unauthorized.into_response(),
-            ApiError::InvalidCredentials => ResponsesClientCodes::Unauthorized.into_response(),
+            // Client errors
+            ApiError::Auth(_) | ApiError::InvalidCredentials => {
+                ResponsesClientCodes::Unauthorized.into_response()
+            },
 
-            ApiError::Validation(_) => ResponsesClientCodes::BadRequest.into_response(),
-            ApiError::Password(_) => ResponsesClientCodes::BadRequest.into_response(),
+            ApiError::Validation(_) | ApiError::Password(_) => {
+                ResponsesClientCodes::BadRequest.into_response()
+            },
 
             ApiError::UserNotFound => ResponsesClientCodes::NotFound.into_response(),
             ApiError::EmailAlreadyExists => ResponsesClientCodes::Conflict.into_response(),
