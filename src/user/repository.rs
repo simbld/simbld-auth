@@ -47,7 +47,7 @@ pub trait UserRepository: Send + Sync {
         provider_user_id: &str,
     ) -> Result<Option<User>, UserError>;
 
-    /// Finds an OAuth provider by provider name and provider user ID
+    /// Finds an OAuth provider-by-provider name and provider user ID
     async fn find_oauth_provider(
         &self,
         provider_name: &str,
@@ -97,7 +97,7 @@ impl UserRepository for PgUserRepository {
             User,
             r#"
         SELECT
-            id, username, email, password_hash, mfa_enabled, mfa_secret,
+            id, username, email, password, mfa_enabled, mfa_secret,
             account_locked, failed_login_attempts, last_login, created_at, updated_at,
             password_changed_at, password_history, password_expires_at, require_password_change,
             false as email_verified, null as provider_name, null as provider_user_id,
@@ -120,7 +120,7 @@ impl UserRepository for PgUserRepository {
             User,
             r#"
         SELECT
-            id, username, email, password_hash, mfa_enabled, mfa_secret,
+            id, username, email, password, mfa_enabled, mfa_secret,
             account_locked, failed_login_attempts, last_login, created_at, updated_at,
             password_changed_at, password_history, password_expires_at, require_password_change,
             false as email_verified, null as provider_name, null as provider_user_id,
@@ -143,7 +143,7 @@ impl UserRepository for PgUserRepository {
         User,
         r#"
         SELECT
-            id, username, email, password_hash, mfa_enabled, mfa_secret,
+            id, username, email, password, mfa_enabled, mfa_secret,
             account_locked, failed_login_attempts, last_login, created_at, updated_at,
             password_changed_at, password_history, password_expires_at, require_password_change,
             false as email_verified, null as provider_name, null as provider_user_id, null as display_name,
@@ -153,9 +153,9 @@ impl UserRepository for PgUserRepository {
         "#,
         username
     )
-            .fetch_optional(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+			.fetch_optional(&*self.pool)
+			.await
+			.map_err(Into::into)?;
 
         Ok(user)
     }
@@ -260,7 +260,7 @@ impl UserRepository for PgUserRepository {
         User,
         r#"
         SELECT
-            u.id, u.username, u.email, u.password_hash, u.mfa_enabled, u.mfa_secret,
+            u.id, u.username, u.email, u.password, u.mfa_enabled, u.mfa_secret,
             u.account_locked, u.failed_login_attempts, u.last_login, u.created_at, u.updated_at,
             u.password_changed_at, u.password_history, u.password_expires_at, u.require_password_change,
             op.provider_name, op.provider_user_id, u.display_name, false as email_verified, null as profile_image, null as status
@@ -271,9 +271,9 @@ impl UserRepository for PgUserRepository {
         provider_name,
         provider_user_id
     )
-            .fetch_optional(&*self.pool)
-            .await
-            .map_err(Into::into)?;
+			.fetch_optional(&*self.pool)
+			.await
+			.map_err(Into::into)?;
 
         Ok(user)
     }
@@ -301,40 +301,40 @@ impl UserRepository for PgUserRepository {
 
     async fn create(&self, user: &User) -> Result<(), UserError> {
         sqlx::query(
-            r#"
+			r#"
         INSERT INTO users (
-            id, username, email, password_hash, display_name, profile_image, mfa_enabled, mfa_secret, account_locked,
+            id, username, email, password, display_name, profile_image, mfa_enabled, mfa_secret, account_locked,
             failed_login_attempts, last_login, password_changed_at, password_expires_at,
             require_password_change, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
         )
         "#
-        )
-            .bind(&user.id)
-            .bind(&user.username)
-            .bind(&user.email)
-            .bind(&user.email_verified)
-            .bind(&user.password_hash)
-            .bind(&user.provider_name)
-            .bind(&user.provider_user_id)
-            .bind(&user.display_name)
-            .bind(&user.profile_image)
-            .bind(&user.mfa_enabled)
-            .bind(&user.mfa_secret)
-            .bind(&user.account_locked)
-            .bind(&user.failed_login_attempts)
-            .bind(&user.last_login)
-            .bind(&user.password_changed_at)
-            .bind(&user.password_expires_at)
-            .bind(&user.require_password_change)
-            .bind(&user.status)
-            .bind(&user.created_at)
-            .bind(&user.updated_at)
+		)
+			.bind(&user.id)
+			.bind(&user.username)
+			.bind(&user.email)
+			.bind(&user.email_verified)
+			.bind(&user.password)
+			.bind(&user.provider_name)
+			.bind(&user.provider_user_id)
+			.bind(&user.display_name)
+			.bind(&user.profile_image)
+			.bind(&user.mfa_enabled)
+			.bind(&user.mfa_secret)
+			.bind(&user.account_locked)
+			.bind(&user.failed_login_attempts)
+			.bind(&user.last_login)
+			.bind(&user.password_changed_at)
+			.bind(&user.password_expires_at)
+			.bind(&user.require_password_change)
+			.bind(&user.status)
+			.bind(&user.created_at)
+			.bind(&user.updated_at)
 
-            .execute(&mut *self.pool.acquire().await?)
-            .await
-            .map_err(Into::into)?;
+			.execute(&mut *self.pool.acquire().await?)
+			.await
+			.map_err(Into::into)?;
 
         Ok(())
     }
@@ -346,7 +346,7 @@ impl UserRepository for PgUserRepository {
         SET
             username = $1,
             email = $2,
-            password_hash = $3,
+            password = $3,
             mfa_enabled = $4,
             mfa_secret = $5,
             account_locked = $6,
@@ -361,7 +361,7 @@ impl UserRepository for PgUserRepository {
         "#,
             user.username,
             user.email,
-            user.password_hash,
+            user.password,
             user.mfa_enabled,
             user.mfa_secret,
             user.account_locked,
@@ -435,7 +435,7 @@ impl UserRepository for PgUserRepository {
             User,
             r#"
         SELECT
-            id, username, email, password_hash, mfa_enabled, mfa_secret,
+            id, username, email, password, mfa_enabled, mfa_secret,
         account_locked, failed_login_attempts, last_login, created_at, updated_at,
         password_changed_at, password_history, password_expires_at, require_password_change,
         false as email_verified, null as provider_name, null as provider_user_id,
@@ -501,7 +501,7 @@ mod tests {
                 id UUID PRIMARY KEY,
                 username VARCHAR(255) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
+                password VARCHAR(255) NOT NULL,
                 provider VARCHAR(50) NOT NULL DEFAULT 'local',
                 provider_user_id VARCHAR(255) NOT NULL DEFAULT '',
                 display_name VARCHAR(255),
@@ -561,7 +561,7 @@ mod tests {
             username: "test_user".to_string(),
             email: "test@example.com".to_string(),
             email_verified: false,
-            password_hash: "hashed_password".to_string(),
+            password: "hashed_password".to_string(),
             provider_name: "local".to_string(),
             provider_user_id: "".to_string(),
             display_name: Some("Test_User".to_string()),
@@ -610,7 +610,7 @@ mod tests {
             username: "updater".to_string(),
             email: "update@example.com".to_string(),
             email_verified: false,
-            password_hash: "hashed_password".to_string(),
+            password: "hashed_password".to_string(),
             provider_user_id: "".to_string(),
             display_name: None,
             profile_image: None,
@@ -657,7 +657,7 @@ mod tests {
             username: "delete_user".to_string(),
             email: "delete@example.com".to_string(),
             email_verified: false,
-            password_hash: "hashed_password".to_string(),
+            password: "hashed_password".to_string(),
             provider_name: "local".to_string(),
             provider_user_id: "".to_string(),
             display_name: None,
@@ -699,7 +699,7 @@ mod tests {
             username: "roller".to_string(),
             email: "role@example.com".to_string(),
             email_verified: false,
-            password_hash: "hashed_password".to_string(),
+            password: "hashed_password".to_string(),
             provider_name: "local".to_string(),
             provider_user_id: "".to_string(),
             display_name: None,
