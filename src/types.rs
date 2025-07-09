@@ -121,19 +121,12 @@ pub struct MfaConfig {
 
 /// User registration data
 #[derive(Debug, Clone, Deserialize)]
-pub struct CreateUserRequest {
+pub struct RegisterRequest {
     pub email: String,
     pub password: String,
     pub username: String,
     pub firstname: String,
     pub lastname: String,
-}
-
-/// User login credentials
-#[derive(Debug, Clone, Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
 }
 
 /// Authentication response
