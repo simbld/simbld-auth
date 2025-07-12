@@ -5,6 +5,7 @@
 //! session management, and token handling.
 
 pub mod dto;
+mod entities;
 pub mod handlers;
 pub mod jwt;
 pub mod mfa;
