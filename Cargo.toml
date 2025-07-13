@@ -50,3 +50,4 @@ bcrypt = "0.15"
 zeroize = "1.7"
 secrecy = { version = "0.8", features = ["serde"] }
 num_cpus = "1.16.0"
+validator = { version = "0.20.0", features = ["derive"] }
