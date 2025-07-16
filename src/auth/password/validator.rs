@@ -1,6 +1,6 @@
 //! Password validation utilities.
 //!
-//! Enforces security requirements for passwords, including:
+//! Enforces security requirements for passwords, including
 //! - Minimum length
 //! - Character complexity requirements
 //! - Common password checks
@@ -27,7 +27,7 @@ pub fn validate_password(password: &str) -> bool {
     let has_digit = !REQUIRE_DIGIT || password.chars().any(|c| c.is_ascii_digit());
     let has_symbol = !REQUIRE_SYMBOL || password.chars().any(|c| !c.is_alphanumeric());
 
-    // All requirements must be met
+    // All requirements have to be met.
     has_uppercase && has_lowercase && has_digit && has_symbol
 }
 
@@ -55,7 +55,7 @@ pub struct PasswordValidationDetails {
 }
 
 impl PasswordValidationDetails {
-    /// Check if all requirements are met
+    /// Check every condition.
     pub fn is_valid(&self) -> bool {
         self.meets_length
             && (!REQUIRE_UPPERCASE || self.has_uppercase)

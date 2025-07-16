@@ -40,7 +40,7 @@ impl ResponseHandler {
     /// * `HttpResponse` - Formatted response based on a client type
     ///
     /// # Detection Logic
-    /// - Checks Accept header for "application/json"
+    /// - Checks Accept header for "app/json"
     /// - Checks for X-Requested-With header (AJAX requests)
     /// - Defaults to HTML for browsers
     ///
