@@ -4,7 +4,6 @@
 //! used throughout the app.
 
 use serde::{Deserialize, Serialize};
-use simbld_http::responses::{CustomResponse, ResponsesClientCodes, ResponsesServerCodes};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -20,7 +19,7 @@ pub enum StartupError {
 }
 
 /// Runtime API errors
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error, Clone, PartialEq)]
 pub enum ApiError {
     #[error("Internal server error: {message}")]
     Internal {
@@ -52,40 +51,24 @@ pub enum ApiError {
 
     #[error("Invalid credentials")]
     InvalidCredentials,
-}
 
-impl ApiError {
-    pub fn new(message: String) -> Self {
-        Self::Internal {
-            message,
-        }
-    }
+    #[error("MFA error: {0}")]
+    Mfa(String),
 
-    /// Convert to appropriate HTTP response
-    pub fn to_http_response(&self) -> CustomResponse {
-        match self {
-            // Server errors
-            ApiError::Internal {
-                ..
-            }
-            | ApiError::Database(_)
-            | ApiError::Config {
-                ..
-            } => ResponsesServerCodes::InternalServerError.into_response(),
+    #[error("JWT error: {0}")]
+    Jwt(String),
 
-            // Client errors
-            ApiError::Auth(_) | ApiError::InvalidCredentials => {
-                ResponsesClientCodes::Unauthorized.into_response()
-            },
+    #[error("Rate limit exceeded")]
+    RateLimit,
 
-            ApiError::Validation(_) | ApiError::Password(_) => {
-                ResponsesClientCodes::BadRequest.into_response()
-            },
+    #[error("Permission denied")]
+    PermissionDenied,
 
-            ApiError::UserNotFound => ResponsesClientCodes::NotFound.into_response(),
-            ApiError::EmailAlreadyExists => ResponsesClientCodes::Conflict.into_response(),
-        }
-    }
+    #[error("Account locked")]
+    AccountLocked,
+
+    #[error("Session expired")]
+    SessionExpired,
 }
 
 /// Complete app configuration
