@@ -8,33 +8,52 @@
 
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use thiserror::Error;
 
 /// 🔒 Secure password wrapper with automatic redaction
 #[derive(Clone, Deserialize)]
-pub struct SecurePassword(#[serde(skip_serializing)] Secret<String>);
+pub struct SecurePassword {
+    #[serde(skip_serializing)]
+    password: String,
+}
 
 impl SecurePassword {
     /// Create a new secure password
     pub fn new(password: String) -> Self {
-        Self(Secret::new(password))
+        Self {
+            password,
+        }
     }
 
     /// Expose the secret for hashing/verification
     pub fn expose_secret(&self) -> &str {
-        self.0.expose_secret()
+        &self.password
     }
 }
 
-/// 🔒 Secure serialization never exposes password in logs/responses
+/// 🔒 Mask in JSON serialization
 impl Serialize for SecurePassword {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         serializer.serialize_str("[REDACTED]")
+    }
+}
+
+// 🔒 Mask in Println.("{:}", password)
+impl fmt::Debug for SecurePassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecurePassword").field("password", &"[REDACTED]").finish()
+    }
+}
+
+// 🔒 Mask in Println.("{}", password)
+impl fmt::Display for SecurePassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[REDACTED]")
     }
 }
 
@@ -265,5 +284,30 @@ mod tests {
         // Valid password
         let result = PasswordService::validate_password_strength("ValidPassword123!");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_secure_password_serialization() {
+        let password = SecurePassword::new("secret123".to_string());
+        let serialized = serde_json::to_string(&password).unwrap();
+        assert_eq!(serialized, r#""[REDACTED]""#);
+    }
+
+    #[test]
+    fn test_no_password_leaks() {
+        let password = SecurePassword::new("supersecret123".to_string());
+
+        // Test Debug
+        let debug_str = format!("{:?}", password);
+        assert!(!debug_str.contains("supersecret123"));
+        assert!(debug_str.contains("[REDACTED]"));
+
+        // Test Display
+        let display_str = format!("{}", password);
+        assert_eq!(display_str, "[REDACTED]");
+
+        // Test Serialize
+        let json = serde_json::to_string(&password).unwrap();
+        assert_eq!(json, "\"[REDACTED]\"");
     }
 }
