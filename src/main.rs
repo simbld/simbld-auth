@@ -4,12 +4,14 @@
 
 pub mod auth;
 pub mod health;
-pub mod postgres;
+pub mod protected;
+pub mod sqlx;
 pub mod types;
 pub mod user;
+pub mod utils;
 
 use crate::health::health_check;
-use crate::postgres::config;
+use crate::sqlx::config;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenvy::dotenv;
 use simbld_http::responses::ResponsesServerCodes;
@@ -33,7 +35,7 @@ async fn main() -> Result<(), StartupError> {
     })?;
 
     // Connect to database
-    let db = postgres::Database::new(&config.database_url).await.map_err(|e| {
+    let db = sqlx::Database::new(&config.database_url).await.map_err(|e| {
         eprintln!("❌ Database connection error: {}", e);
         eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
         StartupError::Database(e.to_string())
