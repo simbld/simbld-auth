@@ -276,7 +276,7 @@ pub struct EmailVerificationToken {
 pub struct RateLimit {
     /// Rate limit ID
     pub id: Uuid,
-    /// Identifier for the rate limit (for example user ID, IP address)
+    /// Identifier for the rate limit (for example, user ID, IP address)
     pub identifier: String,
     /// Rate limit type
     pub limit_type: RateLimitType,
@@ -357,7 +357,7 @@ impl User {
         matches!(self.status, UserStatus::Active) && !self.account_locked
     }
 
-    /// Check if user can login
+    /// Check if a user can log in
     pub fn can_login(&self) -> bool {
         self.is_active() && self.email_verified
     }
@@ -493,6 +493,31 @@ impl AuditLog {
         self.error = Some(error);
         self.success = false;
         self
+    }
+}
+
+impl From<String> for UserStatus {
+    fn from(status: String) -> Self {
+        match status.to_lowercase().as_str() {
+            "active" => UserStatus::Active,
+            "inactive" => UserStatus::Inactive,
+            "suspended" => UserStatus::Suspended,
+            "pending" => UserStatus::Pending,
+            "deleted" => UserStatus::Deleted,
+            _ => UserStatus::Inactive, // Default fallback
+        }
+    }
+}
+
+impl From<UserStatus> for String {
+    fn from(status: UserStatus) -> Self {
+        match status {
+            UserStatus::Active => "active".to_string(),
+            UserStatus::Inactive => "inactive".to_string(),
+            UserStatus::Suspended => "suspended".to_string(),
+            UserStatus::Pending => "pending".to_string(),
+            UserStatus::Deleted => "deleted".to_string(),
+        }
     }
 }
 
