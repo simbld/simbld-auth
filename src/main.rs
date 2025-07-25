@@ -11,6 +11,7 @@ pub mod user;
 pub mod utils;
 
 use crate::health::health_check;
+use crate::protected::configure_protected_api;
 use crate::sqlx::config;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenvy::dotenv;
@@ -63,9 +64,9 @@ async fn main() -> Result<(), StartupError> {
             ))
             .wrap(Logger::default())
             .service(
-                web::scope("/api/v1").route("/health", web::get().to(health_check)),
-                // .route("/auth/register", web::post().to(handlers::auth::register))
-                // .route("/auth/login", web::post().to(handlers::auth::login))
+                web::scope("/api/v1")
+                    .route("/health", web::get().to(health_check))
+                    .configure(configure_protected_api),
             )
             // Root health check
             .route("/health", web::get().to(health_check))
