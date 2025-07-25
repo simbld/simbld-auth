@@ -28,9 +28,9 @@ pub struct AuthenticatedUser {
     pub token: String,
 }
 
-/// Extract and validate authentication token from the request
+/// Extract and validate an authentication token from the request
 ///
-/// Returns the authenticated user info if valid, or an error response
+/// Returns the authenticated user information if valid, or an error response
 async fn extract_auth_user(
     req: &HttpRequest,
     auth_service: &AuthService,
@@ -65,7 +65,22 @@ async fn extract_auth_user(
 
     Ok(AuthenticatedUser {
         user_id: claims.user_id,
-        email: format!("user-{}", claims.user_id), // Temporary - should get actual email from user profile
+        email: format!("user-{}", claims.user_id), // Temporary - should get actual email from the user profile
+        name: None,
+        display_name: None,
+        profile_picture: None,
+        email_verified: false,
+        mfa_enabled: false,
+        last_login: None,
+        account_locked: false,
+        failed_login_attempts: 0,
+        status: "active".to_string(),
+        created_at: chrono::Utc::now().naive_utc(),
+        updated_at: None,
+        roles: vec!["user".to_string()],
+        permissions: vec!["read".to_string()],
+        scopes: vec!["profile".to_string()],
+        token: token.to_string(),
     })
 }
 
@@ -73,7 +88,7 @@ async fn extract_auth_user(
 ///
 /// Returns a success response with the user's email if authentication is valid
 async fn protected_route(req: HttpRequest, auth_service: web::Data<AuthService>) -> impl Responder {
-    // Extract and validate authentication
+    // Remove and validate authentication
     let user = match extract_auth_user(&req, &auth_service).await {
         Ok(user) => user,
         Err(response) => return response,
@@ -102,10 +117,7 @@ async fn get_user_profile(
         Err(response) => return response,
     };
 
-    // Here you would typically fetch the user's profile from a database
-    // For demonstration, we're returning a mock profile
-
-    // Prepare success response
+    // Temp mock data
     HttpResponse::Ok().json(json!({
         "code": 200,
         "desc": "Profile retrieved successfully",
