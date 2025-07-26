@@ -1,363 +1,326 @@
-//! User Service Module
+//! User service layer
 //!
-//! This module provides the business logic for user management operations.
-//! It serves as an intermediary layer between the API handlers and the data repository,
-//! implementing validation, transformation, and business rules for user-related operations.
+//! Contains the business logic for user management operations.
 
-use crate::auth::password::PasswordHasher;
 use crate::user::{
+    dto::*,
     error::UserError,
-    model::{User, UserRole},
+    models::{User, UserRole},
     repository::UserRepository,
 };
 use std::sync::Arc;
 use uuid::Uuid;
+use validator::Validate;
 
 /// Service for managing user-related operations
 pub struct UserService {
-    repo: Arc<dyn UserRepository>,
-    password_hasher: Arc<dyn PasswordHasher>,
+    repository: Arc<dyn UserRepository>,
 }
 
 impl UserService {
-    /// Creates a new UserService with the given dependencies
-    pub fn new(repo: Arc<dyn UserRepository>, password_hasher: Arc<dyn PasswordHasher>) -> Self {
+    /// Create a new UserService
+    pub fn new(repository: Arc<dyn UserRepository>) -> Self {
         Self {
-            repo,
-            password_hasher,
+            repository,
         }
     }
 
-    /// Registers a new local user with email and password
-    pub async fn register_user(
-        &self,
-        username: String,
-        email: String,
-        password: String,
-    ) -> Result<User, UserError> {
-        // Validate input
-        if username.trim().is_empty() {
-            return Err(UserError::ValidationError("Username cannot be empty".to_string()));
-        }
-
-        if email.trim().is_empty() {
-            return Err(UserError::ValidationError("Email cannot be empty".to_string()));
-        }
-
-        if !Self::is_valid_email(&email) {
-            return Err(UserError::ValidationError("Invalid email format".to_string()));
-        }
-
-        if password.len() < 8 {
-            return Err(UserError::ValidationError(
-                "Password must be at least 8 characters long".to_string(),
-            ));
-        }
-
-        // Check if email or username already exists
-        if self.repo.find_by_email(&email).await?.is_some() {
-            return Err(UserError::EmailAlreadyExists);
-        }
-
-        if self.repo.find_by_username(&username).await?.is_some() {
-            return Err(UserError::UsernameAlreadyExists);
-        }
-
-        // Hash password
-        let password_hash = self
-            .password_hasher
-            .hash_password(&password)
-            .map_err(|e| UserError::PasswordHashingError(e.to_string()))?;
-
-        // Create and store user
-        let user = User::new_local(username, email, password_hash);
-        self.repo.create(&user).await?;
-
-        Ok(user)
+    /// Get user by ID
+    pub async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>, UserError> {
+        self.repository.find_by_id(id).await
     }
 
-    /// Gets a user by their ID
-    pub async fn get_user_by_id(&self, id: &Uuid) -> Result<Option<User>, UserError> {
-        self.repo.find_by_id(id).await
-    }
-
-    /// Gets a user by their email
+    /// Get user by email
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, UserError> {
-        self.repo.find_by_email(email).await
+        self.repository.find_by_email(email).await
     }
 
-    /// Gets a user by their username
+    /// Get user by username
     pub async fn get_user_by_username(&self, username: &str) -> Result<Option<User>, UserError> {
-        self.repo.find_by_username(username).await
+        self.repository.find_by_username(username).await
     }
 
-    /// Gets a user by their OAuth provider information
-    pub async fn get_user_with_oauth(&self, user_id: Uuid) -> Result<UserWithOAuthDto, UserError> {
-        let user = self.repository.get_user_by_id(user_id).await?;
-
-        // Récupérer le fournisseur OAuth (s'il existe)
-        let oauth_provider = self.oauth_repository.get_provider_for_user(user_id).await.ok();
-
-        Ok(UserWithOAuthDto::from_user_and_provider(user, oauth_provider))
-    }
-
-    /// Gets a user by their OAuth provider and user ID
-    pub async fn list_users_with_oauth(
-        &self,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<UserWithOAuthDto>, UserError> {
-        let users = self.repository.list_users(limit, offset).await?;
-
-        // Pour chaque utilisateur, récupérer son fournisseur OAuth
-        let mut result = Vec::with_capacity(users.len());
-        for user in users {
-            let oauth_provider = self.oauth_repository.get_provider_for_user(user.id).await.ok();
-
-            result.push(UserWithOAuthDto::from_user_and_provider(user, oauth_provider));
-        }
-
-        Ok(result)
-    }
-
-    /// Updates a user's profile information
+    /// Update user profile
     pub async fn update_profile(
         &self,
-        user_id: &Uuid,
-        display_name: Option<String>,
-        profile_image: Option<String>,
-    ) -> Result<User, UserError> {
-        // Get the current user
-        let mut user = match self.repo.find_by_id(user_id).await? {
-            Some(user) => user,
-            None => return Err(UserError::UserNotFound),
-        };
+        user_id: Uuid,
+        request: UpdateProfileRequest,
+    ) -> Result<(), UserError> {
+        // Validation
+        request.validate()?;
 
-        // Update fields
-        if let Some(name) = display_name {
-            user.display_name = Some(name);
+        // Check if a user exists
+        if let Some(ref new_username) = request.username {
+            if let Some(existing_user) = self.repository.find_by_username(new_username).await? {
+                if existing_user.id != user_id {
+                    return Err(UserError::UsernameTaken);
+                }
+            }
         }
 
-        if let Some(image) = profile_image {
-            user.profile_image = Some(image);
-        }
-
-        // Save updated user
-        self.repo.update(&user).await?;
-        Ok(user)
+        // Update the profile
+        self.repository
+            .update_profile(user_id, request.firstname, request.lastname, request.username)
+            .await
     }
 
-    /// Changes a user's password
+    /// Change user password
     pub async fn change_password(
         &self,
-        user_id: &Uuid,
-        current_password: &str,
-        new_password: &str,
+        user_id: Uuid,
+        request: ChangePasswordRequest,
     ) -> Result<(), UserError> {
-        // Get the current user
-        let mut user = match self.repo.find_by_id(user_id).await? {
-            Some(user) => user,
-            None => return Err(UserError::UserNotFound),
-        };
+        // Validation
+        request.validate()?;
 
-        // OAuth users cannot change password this way
-        if user.is_oauth_user() {
-            return Err(UserError::OperationNotAllowed(
-                "OAuth users cannot change password this way".to_string(),
-            ));
-        }
-
-        // Validate current password
-        let is_valid = self
-            .password_hasher
-            .verify_password(current_password, &user.password_hash)
-            .map_err(|e| UserError::PasswordVerificationError(e.to_string()))?;
-
-        if !is_valid {
-            return Err(UserError::InvalidCredentials);
-        }
-
-        // Validate new password
-        if new_password.len() < 8 {
-            return Err(UserError::ValidationError(
-                "New password must be at least 8 characters long".to_string(),
-            ));
-        }
-
-        // Hash and update password
-        let password_hash = self
-            .password_hasher
-            .hash_password(new_password)
-            .map_err(|e| UserError::PasswordHashingError(e.to_string()))?;
-
-        user.password_hash = password_hash;
-        self.repo.update(&user).await?;
-
-        Ok(())
+        // TODO: Vérifier le mot de passe actuel
+        // Pour l'instant, on met à jour directement
+        self.repository.update_password(user_id, request.new_password).await
     }
 
-    /// Creates or updates a user from OAuth provider data
-    pub async fn create_or_update_oauth_user(
+    /// Update user status (Admin only)
+    pub async fn update_user_status(
         &self,
-        email: String,
-        provider_name: String,
-        provider_user_id: String,
-        display_name: Option<String>,
-        profile_image: Option<String>,
-    ) -> Result<User, UserError> {
-        // Check if user exists by provider info
-        if let Some(mut existing_user) =
-            self.repo.find_by_provider(&provider_name, &provider_user_id).await?
-        {
-            // Update user information
-            if let Some(name) = display_name {
-                existing_user.display_name = Some(name);
-            }
-
-            if let Some(image) = profile_image {
-                existing_user.profile_image = Some(image);
-            }
-
-            self.repo.update(&existing_user).await?;
-            return Ok(existing_user);
-        }
-
-        // Check if user exists by email
-        if let Some(mut existing_user) = self.repo.find_by_email(&email).await? {
-            // Link provider to existing user
-            existing_user.provider_name = provider_name;
-            existing_user.provider_user_id = provider_user_id;
-
-            if let Some(name) = display_name {
-                existing_user.display_name = Some(name);
-            }
-
-            if let Some(image) = profile_image {
-                existing_user.profile_image = Some(image);
-            }
-
-            self.repo.update(&existing_user).await?;
-            return Ok(existing_user);
-        }
-
-        // Create new user
-        let user =
-            User::new_oauth(email, provider_name, provider_user_id, display_name, profile_image);
-        self.repo.create(&user).await?;
-
-        Ok(user)
+        user_id: Uuid,
+        request: UpdateUserStatusRequest,
+    ) -> Result<(), UserError> {
+        request.validate()?;
+        self.repository.update_status(user_id, request.status).await
     }
 
-    /// Deletes a user account
-    pub async fn delete_user(&self, user_id: &Uuid) -> Result<(), UserError> {
-        if self.repo.find_by_id(user_id).await?.is_none() {
+    /// List users with pagination and filters
+    pub async fn list_users(&self, query: ListUsersQuery) -> Result<UserListResponse, UserError> {
+        // Validation et valeurs par défaut
+        let limit = query.limit.unwrap_or(50);
+        let offset = query.offset.unwrap_or(0);
+        let status = query.status;
+        let search = query.search.clone();
+
+        // Valider les paramètres
+        let validated_query = ListUsersQuery {
+            limit: Some(limit),
+            offset: Some(offset),
+            status,
+            search: search.clone(),
+            ..query
+        };
+        validated_query.validate()?;
+
+        // Récupérer les utilisateurs
+        let users = self.repository.list_users(limit, offset, status, search.clone()).await?;
+
+        // Compter le total
+        let total = self.repository.count_users(status, search).await?;
+
+        // Convertir en UserSummary et récupérer les rôles
+        let mut user_summaries = Vec::new();
+        for user in users {
+            let roles = self.repository.get_user_roles(user.id).await.unwrap_or_default();
+
+            let display_name = user.display_name();
+            let user_id = user.id;
+            let last_login = user.last_login;
+            let created_at = user.created_at;
+
+            let summary = UserSummary {
+                id: user_id.to_string(),
+                username: user.username,
+                email: user.email,
+                display_name,
+                status: user.status,
+                email_verified: user.email_verified,
+                mfa_enabled: user.mfa_enabled,
+                roles,
+                last_login: datetime_to_string(last_login),
+                created_at: datetime_to_string_required(created_at),
+            };
+            user_summaries.push(summary);
+        }
+
+        Ok(UserListResponse {
+            users: user_summaries,
+            total,
+            limit,
+            offset,
+        })
+    }
+
+    /// Assign a role to a user (Admin only)
+    pub async fn assign_role(
+        &self,
+        user_id: Uuid,
+        request: AssignRoleRequest,
+    ) -> Result<(), UserError> {
+        request.validate()?;
+
+        // Check if a user exists
+        if self.repository.find_by_id(user_id).await?.is_none() {
             return Err(UserError::UserNotFound);
         }
 
-        self.repo.delete(user_id).await?;
-        Ok(())
+        self.repository.assign_role(user_id, request.role).await
     }
 
-    /// Assigns a role to a user
-    pub async fn assign_role(&self, user_id: &Uuid, role: UserRole) -> Result<(), UserError> {
-        if self.repo.find_by_id(user_id).await?.is_none() {
+    /// Get user roles
+    pub async fn get_user_roles(&self, user_id: Uuid) -> Result<Vec<UserRole>, UserError> {
+        // Check if a user exists
+        if self.repository.find_by_id(user_id).await?.is_none() {
             return Err(UserError::UserNotFound);
         }
 
-        self.repo.assign_role(user_id, role).await?;
-        Ok(())
+        self.repository.get_user_roles(user_id).await
     }
 
-    /// Gets roles assigned to a user
-    pub async fn get_user_roles(&self, user_id: &Uuid) -> Result<Vec<UserRole>, UserError> {
-        if self.repo.find_by_id(user_id).await?.is_none() {
-            return Err(UserError::UserNotFound);
+    /// Get user statistics (Admin only)
+    pub async fn get_user_stats(&self) -> Result<UserStatsResponse, UserError> {
+        let stats = self.repository.get_user_stats().await?;
+
+        Ok(UserStatsResponse {
+            total_users: stats.total_users,
+            active_users: stats.active_users,
+            pending_users: stats.pending_users,
+            suspended_users: stats.suspended_users,
+            verified_emails: stats.verified_emails,
+            mfa_enabled: stats.mfa_enabled,
+            recent_logins: stats.recent_logins,
+        })
+    }
+
+    /// Convert User to UserResponse
+    pub fn user_to_response(&self, user: User) -> UserResponse {
+        let display_name = user.display_name();
+        let last_login = user.last_login;
+        let created_at = user.created_at;
+        let updated_at = user.updated_at;
+
+        UserResponse {
+            id: user.id.to_string(),
+            username: user.username,
+            email: user.email,
+            firstname: user.firstname,
+            lastname: user.lastname,
+            display_name,
+            email_verified: user.email_verified,
+            mfa_enabled: user.mfa_enabled,
+            status: user.status,
+            last_login: datetime_to_string(last_login),
+            created_at: datetime_to_string_required(created_at),
+            updated_at: datetime_to_string_required(updated_at),
         }
-
-        self.repo.get_user_roles(user_id).await
-    }
-
-    /// Validates email format
-    fn is_valid_email(email: &str) -> bool {
-        // Basic email validation with regex
-        let email_regex = regex::Regex::new(
-            r"^([a-z0-9_+]([a-z0-9_+.]*[a-z0-9_+])?)@([a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6})",
-        )
-        .unwrap();
-
-        email_regex.is_match(email)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::password::TestPasswordHasher;
-    use crate::mocks::mock_client::MockUserRepository;
+    use crate::user::models::UserStatus;
+    use crate::user::repository::UserStatsData;
+    use async_trait::async_trait;
+
+    struct MockUserRepository {
+        users: Vec<User>,
+    }
+
+    #[async_trait]
+    impl UserRepository for MockUserRepository {
+        async fn find_by_id(&self, id: Uuid) -> Result<Option<User>, UserError> {
+            Ok(self.users.iter().find(|u| u.id == id).cloned())
+        }
+
+        async fn find_by_email(&self, email: &str) -> Result<Option<User>, UserError> {
+            Ok(self.users.iter().find(|u| u.email == email).cloned())
+        }
+
+        async fn find_by_username(&self, username: &str) -> Result<Option<User>, UserError> {
+            Ok(self.users.iter().find(|u| u.username == username).cloned())
+        }
+
+        async fn update_profile(
+            &self,
+            _user_id: Uuid,
+            _firstname: Option<String>,
+            _lastname: Option<String>,
+            _username: Option<String>,
+        ) -> Result<(), UserError> {
+            Ok(())
+        }
+
+        async fn update_password(
+            &self,
+            _user_id: Uuid,
+            _password: String,
+        ) -> Result<(), UserError> {
+            Ok(())
+        }
+
+        async fn update_status(
+            &self,
+            _user_id: Uuid,
+            _status: UserStatus,
+        ) -> Result<(), UserError> {
+            Ok(())
+        }
+
+        async fn list_users(
+            &self,
+            _limit: i64,
+            _offset: i64,
+            _status: Option<UserStatus>,
+            _search: Option<String>,
+        ) -> Result<Vec<User>, UserError> {
+            Ok(self.users.clone())
+        }
+
+        async fn count_users(
+            &self,
+            _status: Option<UserStatus>,
+            _search: Option<String>,
+        ) -> Result<i64, UserError> {
+            Ok(self.users.len() as i64)
+        }
+
+        async fn assign_role(&self, _user_id: Uuid, _role: UserRole) -> Result<(), UserError> {
+            Ok(())
+        }
+
+        async fn get_user_roles(&self, _user_id: Uuid) -> Result<Vec<UserRole>, UserError> {
+            Ok(vec![UserRole::User])
+        }
+
+        async fn get_user_stats(&self) -> Result<UserStatsData, UserError> {
+            Ok(UserStatsData {
+                total_users: 1,
+                active_users: 1,
+                pending_users: 0,
+                suspended_users: 0,
+                verified_emails: 1,
+                mfa_enabled: 0,
+                recent_logins: 1,
+            })
+        }
+    }
 
     #[tokio::test]
-    async fn test_register_user_success() {
-        let repo = Arc::new(MockUserRepository::new());
-        let password_hasher = Arc::new(TestPasswordHasher::new());
-        let service = UserService::new(repo.clone(), password_hasher);
+    async fn test_get_user_by_id() {
+        let mock_repo = Arc::new(MockUserRepository {
+            users: vec![],
+        });
+        let service = UserService::new(mock_repo);
 
-        let result = service
-            .register_user(
-                "testuser".to_string(),
-                "test@example.com".to_string(),
-                "password123".to_string(),
-            )
-            .await;
-
+        let result = service.get_user_by_id(Uuid::new_v4()).await;
         assert!(result.is_ok());
-        let user = result.unwrap();
-        assert_eq!(user.username, "testuser");
-        assert_eq!(user.email, "test@example.com");
+        assert!(result.unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn test_register_user_invalid_email() {
-        let repo = Arc::new(MockUserRepository::new());
-        let password_hasher = Arc::new(TestPasswordHasher::new());
-        let service = UserService::new(repo, password_hasher);
+    async fn test_list_users() {
+        let mock_repo = Arc::new(MockUserRepository {
+            users: vec![],
+        });
+        let service = UserService::new(mock_repo);
 
-        let result = service
-            .register_user(
-                "testuser".to_string(),
-                "invalid-email".to_string(),
-                "password123".to_string(),
-            )
-            .await;
-
-        assert!(result.is_err());
-        match result {
-            Err(UserError::ValidationError(msg)) => {
-                assert!(msg.contains("Invalid email"));
-            },
-            _ => panic!("Expected ValidationError"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_register_user_short_password() {
-        let repo = Arc::new(MockUserRepository::new());
-        let password_hasher = Arc::new(TestPasswordHasher::new());
-        let service = UserService::new(repo, password_hasher);
-
-        let result = service
-            .register_user(
-                "testuser".to_string(),
-                "test@example.com".to_string(),
-                "short".to_string(),
-            )
-            .await;
-
-        assert!(result.is_err());
-        match result {
-            Err(UserError::ValidationError(msg)) => {
-                assert!(msg.contains("Password must be at least 8 characters"));
-            },
-            _ => panic!("Expected ValidationError"),
-        }
+        let query = ListUsersQuery::default();
+        let result = service.list_users(query).await;
+        assert!(result.is_ok());
     }
 }
