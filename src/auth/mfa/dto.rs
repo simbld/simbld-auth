@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::MfaType;
+pub use super::MfaType;
 
 /// MFA setup initialization request
 #[derive(Debug, Deserialize)]
@@ -59,7 +59,7 @@ pub struct MfaStatusResponse {
     pub backup_codes_count: Option<usize>,
 }
 
-/// WebAuthn credential info
+/// WebAuthn credential information
 #[derive(Debug, Serialize)]
 pub struct WebAuthnCredentialInfo {
     pub id: Uuid,
@@ -68,7 +68,7 @@ pub struct WebAuthnCredentialInfo {
     pub last_used_at: Option<i64>,
 }
 
-/// MFA disable request
+/// MFA turn off request
 #[derive(Debug, Deserialize)]
 pub struct MfaDisableRequest {
     pub mfa_type: MfaType,
