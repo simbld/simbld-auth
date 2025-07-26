@@ -69,7 +69,7 @@ pub struct MfaVerifyRequest {
 }
 
 /// Device information
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeviceInfo {
     pub device_id: Option<String>,
     pub ip_address: Option<String>,
