@@ -1,3 +1,8 @@
-pub mod protected_routes;
+use actix_web::web;
 
-pub use protected_routes::configure_protected_routes;
+pub mod protected_routes;
+pub use protected_routes::*;
+
+pub fn configure_protected_api(cfg: &mut web::ServiceConfig) {
+    cfg.configure_protected_api();
+}

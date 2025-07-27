@@ -1,10 +1,19 @@
 # User Management System for Rust Web Applications
+
 ## Project Overview
-This project provides a comprehensive user management system for Rust web applications built with Axum. It includes robust handlers for user registration, authentication, profile management, and admin operations, along with a flexible error handling system.
+
+This project provides a comprehensive user management system for Rust web applications built with Axum. It includes
+robust handlers for user registration, authentication, profile management, and admin operations, along with a flexible
+error handling system.
+
 ## Key Components
+
 ### 1. Authentication System (`auth/`)
+
 The `auth` directory implements a complete authentication and authorization system with several specialized modules:
+
 #### 1.1 Core Authentication (`auth/mod.rs`, `auth/service.rs`, `auth/handlers.rs`)
+
 - **Token-Based Authentication**
     - JWT (JSON Web Tokens) implementation with access and refresh tokens
     - Configurable token expiration and signing algorithms
@@ -17,6 +26,7 @@ The `auth` directory implements a complete authentication and authorization syst
     - Social authentication integration (OAuth2)
 
 #### 1.2 Multi-Factor Authentication (`auth/mfa/`)
+
 - **TOTP (Time-based One-Time Password)**
     - Implementation of RFC 6238 for time-based authentication codes
     - QR code generation for easy setup with authenticator apps
@@ -33,6 +43,7 @@ The `auth` directory implements a complete authentication and authorization syst
     - Ability to enable/disable MFA for accounts
 
 #### 1.3 Password Management (`auth/password/`)
+
 - **Password Validation**
     - Configurable password complexity requirements
     - Common password detection and prevention
@@ -50,6 +61,7 @@ The `auth` directory implements a complete authentication and authorization syst
     - Password strength assessment
 
 #### 1.4 OAuth Integration (`auth/oauth/`)
+
 - **Provider Integration**
     - Support for common OAuth providers (Google, GitHub, etc.)
     - Standardized provider interface for easy extension
@@ -61,6 +73,7 @@ The `auth` directory implements a complete authentication and authorization syst
     - Creation of new user accounts from OAuth profiles
 
 #### 1.5 Middleware and Protection (`auth/middleware.rs`)
+
 - **Authentication Middleware**
     - JWT validation middleware for protected routes
     - Role-based access control for fine-grained permissions
@@ -73,7 +86,9 @@ The `auth` directory implements a complete authentication and authorization syst
     - Session management utilities
 
 ### 2. User API Handlers (`handlers.rs`)
+
 The `handlers.rs` module implements HTTP handlers for all user-related operations:
+
 - **Authentication & Sessions**
     - User registration
     - Login/logout functionality
@@ -95,9 +110,13 @@ The `handlers.rs` module implements HTTP handlers for all user-related operation
     - Password reset flows
     - Token-based authentication
 
-Each handler follows a consistent pattern of extracting request data, calling the appropriate service method, and formatting the response. The handlers are designed to be testable, with a comprehensive test suite included.
+Each handler follows a consistent pattern of extracting request data, calling the appropriate service method, and
+formatting the response. The handlers are designed to be testable, with a comprehensive test suite included.
+
 ### 3. Error Handling System (`error.rs`)
+
 The `error.rs` module provides a flexible and standardized error handling approach:
+
 - **Structured Error Types**
     - Categorized errors (Authentication, Authorization, Validation, etc.)
     - Meaningful error messages and codes
@@ -118,8 +137,11 @@ The `error.rs` module provides a flexible and standardized error handling approa
     - Comprehensive test coverage
 
 ## Authentication Implementation Details
+
 ### Token System
+
 The authentication system uses a dual-token approach:
+
 ``` rust
 pub struct TokenPair {
     pub access_token: String,
@@ -128,11 +150,14 @@ pub struct TokenPair {
     pub refresh_expires_at: DateTime<Utc>,
 }
 ```
+
 - **Access Token**: Short-lived token (15-60 minutes) used for API authorization
 - **Refresh Token**: Longer-lived token (days/weeks) for obtaining new access tokens
 
 ### Multi-Factor Authentication Flow
+
 The MFA system supports multiple authentication methods:
+
 ``` rust
 pub enum MfaMethod {
     Totp,
@@ -149,7 +174,9 @@ pub struct MfaConfiguration {
     pub last_used: Option<DateTime<Utc>>,
 }
 ```
+
 MFA authentication flow:
+
 1. **User logs in with password**
 2. **System detects MFA is enabled**
 3. **User is prompted for MFA code**
@@ -157,6 +184,7 @@ MFA authentication flow:
 5. **System validates the code and grants full access**
 
 Example of MFA setup:
+
 ``` rust
 // Generate new TOTP secret
 POST /auth/mfa/setup
@@ -184,8 +212,11 @@ Authorization: Bearer access_token
   "code": "123456"
 }
 ```
+
 ### Password Management Features
+
 Password management includes several security features:
+
 ``` rust
 pub struct PasswordPolicy {
     pub min_length: usize,
@@ -204,16 +235,21 @@ pub struct PasswordResetToken {
     pub used: bool,
 }
 ```
+
 Password reset flow:
+
 1. **User requests password reset**
+
 ``` rust
    POST /auth/password/reset-request
    {
      "email": "user@example.com"
    }
 ```
+
 1. **System generates reset token and sends email**
 2. **User submits new password with token**
+
 ``` rust
    POST /auth/password/reset
    {
@@ -221,10 +257,13 @@ Password reset flow:
      "new_password": "new_secure_password"
    }
 ```
+
 1. **System validates token, updates password, and invalidates token**
 
 ### Auth Flow
+
 1. **Registration**:
+
 ``` rust
    POST /auth/register
    {
@@ -233,7 +272,9 @@ Password reset flow:
      "username": "username"
    }
 ```
+
 1. **Login**:
+
 ``` rust
    POST /auth/login
    {
@@ -241,41 +282,52 @@ Password reset flow:
      "password": "secure_password"
    }
 ```
+
 Response:
+
 ``` json
    {
-     "status": 200,
-     "message": "Login successful",
-     "data": {
-       "user": {
-         "id": "user_id",
-         "email": "user@example.com",
-         "username": "username",
-         "roles": ["USER"]
-       },
-       "tokens": {
-         "access_token": "jwt_token_here",
-         "refresh_token": "refresh_token_here",
-         "access_expires_at": "2023-01-01T00:15:00Z",
-         "refresh_expires_at": "2023-01-08T00:00:00Z"
-       }
-     }
-   }
+  "status": 200,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "id": "user_id",
+      "email": "user@example.com",
+      "username": "username",
+      "roles": [
+        "USER"
+      ]
+    },
+    "tokens": {
+      "access_token": "jwt_token_here",
+      "refresh_token": "refresh_token_here",
+      "access_expires_at": "2023-01-01T00:15:00Z",
+      "refresh_expires_at": "2023-01-08T00:00:00Z"
+    }
+  }
+}
 ```
+
 1. **Token Refresh**:
+
 ``` rust
    POST /auth/refresh
    {
      "refresh_token": "refresh_token_here"
    }
 ```
+
 1. **Protected Route Access**:
+
 ``` rust
    GET /api/protected-resource
    Authorization: Bearer jwt_token_here
 ```
+
 ### Middleware Implementation
+
 The authentication middleware extracts and validates JWT tokens:
+
 ``` rust
 pub async fn auth_middleware<B>(
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
@@ -301,33 +353,48 @@ pub async fn auth_middleware<B>(
     Ok(next.run(request).await)
 }
 ```
+
 ## API Response Format
+
 All API responses follow a consistent JSON structure:
+
 ``` json
 {
   "status": 200,
   "message": "Operation successful",
-  "data": { ... }
+  "data": {
+    ...
+  }
 }
 ```
+
 For errors:
+
 ``` json
 {
   "status": 400,
   "message": "Invalid request: Username already taken",
   "code": "CONFLICT",
-  "details": { ... }
+  "details": {
+    ...
+  }
 }
 ```
+
 ## Error Handling Strategy
-The error system converts application-specific errors into HTTP responses with appropriate status codes and detailed messages. This ensures:
+
+The error system converts application-specific errors into HTTP responses with appropriate status codes and detailed
+messages. This ensures:
+
 1. Consistent error formats across the API
 2. Clear information for API consumers
 3. Secure error handling that doesn't leak sensitive details
 4. Easy debugging with detailed internal error information
 
 ## Usage Examples
+
 ### Registering a User
+
 ``` rust
 // Handler
 pub async fn register_user(
@@ -346,7 +413,9 @@ POST /api/users/register
   "password": "securepassword"
 }
 ```
+
 ### Authenticating and Accessing Protected Resources
+
 ``` rust
 // Login first to get tokens
 POST /auth/login
@@ -359,7 +428,9 @@ POST /auth/login
 GET /api/protected-resource
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
+
 ### Setting Up MFA
+
 ``` rust
 // Start MFA setup
 POST /auth/mfa/setup
@@ -372,7 +443,9 @@ Authorization: Bearer access_token
   "code": "123456"
 }
 ```
+
 ### Handling Errors
+
 ``` rust
 // In your service layer
 if user_exists {
@@ -381,19 +454,27 @@ if user_exists {
 
 // Auto-converts to HTTP response with status 409 and JSON body
 ```
+
 ## Testing Approach
+
 The system includes comprehensive tests for handlers and the error system:
+
 - **Unit Tests**: Verify individual handler logic
 - **Integration Tests**: Test the full request-response cycle
 - **Mock Implementations**: Test service interactions in isolation
 
 ## Extendability
+
 The system is designed to be extensible:
+
 - Add new error types as needed
 - Implement additional handlers for new functionality
 - Extend the user model with custom fields
 - Support additional authentication methods
 - Add new MFA providers
 
+**Créer une sécurité supplémentaire d'alerte agression dans le cas d'un home jacking ou kidnapping**
+
 ## License
+
 This project is licensed under the MIT License. See the LICENSE file for details.

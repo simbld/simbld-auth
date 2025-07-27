@@ -1,161 +1,92 @@
-mod config;
-mod database;
-mod types;
+//! Simbld_auth Secure Authentication Service
+//!
+//! A comprehensive authentication microservice with multiple provider support using simbld_http API
 
-use actix_web::{web, App, HttpServer, Responder};
+pub mod auth;
+pub mod health;
+pub mod protected;
+pub mod sqlx;
+pub mod types;
+pub mod user;
+pub mod utils;
+
+use crate::health::health_check;
+use crate::protected::configure_protected_api;
+use crate::sqlx::config;
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use dotenvy::dotenv;
-use std::sync::Arc;
-use std::time::Duration;
-
-use crate::database::Database;
-use simbld_http::responses::{
-    ResponsesClientCodes, ResponsesLocalApiCodes, ResponsesServerCodes, ResponsesSuccessCodes,
-};
-use simbld_http::{AuthMiddleware, HttpInterceptor, UnifiedMiddleware};
-
-#[derive(serde::Deserialize)]
-struct CreateUser {
-    email: String,
-    password: String,
-    first_name: String,
-    last_name: String,
-}
-
-#[derive(serde::Deserialize)]
-struct LoginCredentials {
-    email: String,
-    password: String,
-}
-
-/// Register a new user
-async fn register_user(
-    user_data: web::Json<CreateUser>,
-    db: web::Data<Arc<Database>>,
-) -> impl Responder {
-    match validate_user(&user_data).await {
-        Ok(()) => {
-            println!(
-                "👤 New user: {first_name} {last_name}",
-                first_name = user_data.first_name,
-                last_name = user_data.last_name
-            );
-            ResponsesSuccessCodes::Created.into_response()
-        },
-        Err(ValidationError::EmailExists) => ResponsesClientCodes::Conflict.into_response(),
-        Err(ValidationError::InvalidEmail) => ResponsesLocalApiCodes::InvalidEmail.into_response(),
-        Err(ValidationError::WeakPassword) => {
-            ResponsesLocalApiCodes::InvalidPassword.into_response()
-        },
-    }
-}
-
-/// Log in a user
-async fn login_user(
-    credentials: web::Json<LoginCredentials>,
-    db: web::Data<Arc<Database>>,
-) -> impl Responder {
-    match authenticate(&credentials).await {
-        Ok(()) => ResponsesSuccessCodes::Ok.into_response(),
-        Err(AuthError::InvalidCredentials) => {
-            ResponsesLocalApiCodes::AuthentificationFailed.into_response()
-        },
-        Err(AuthError::AccountLocked) => ResponsesClientCodes::Forbidden.into_response(),
-        Err(AuthError::DatabaseError) => ResponsesServerCodes::InternalServerError.into_response(),
-    }
-}
-
-/// Validate user input
-async fn validate_user(user: &CreateUser) -> Result<(), ValidationError> {
-    use regex::Regex;
-
-    // Email regex
-    let email_regex = Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").unwrap();
-    if !email_regex.is_match(&user.email) {
-        return Err(ValidationError::InvalidEmail);
-    }
-
-    // Password strength
-    if user.password.len() < 8 {
-        return Err(ValidationError::WeakPassword);
-    }
-
-    // Check email exists
-    if user.email == "test@example.com" {
-        return Err(ValidationError::EmailExists);
-    }
-
-    Ok(())
-}
-
-/// Simulated authentication function
-async fn authenticate(credentials: &LoginCredentials) -> Result<(), AuthError> {
-    if credentials.email == "user@test.com" && credentials.password == "password123" {
-        Ok(())
-    } else if credentials.email == "locked@test.com" {
-        Err(AuthError::AccountLocked)
-    } else {
-        Err(AuthError::InvalidCredentials)
-    }
-}
-
-#[derive(Debug)]
-enum ValidationError {
-    InvalidEmail,
-    WeakPassword,
-    EmailExists,
-}
-
-#[derive(Debug)]
-enum AuthError {
-    InvalidCredentials,
-    AccountLocked,
-    DatabaseError,
-}
+use simbld_http::responses::ResponsesServerCodes;
+use simbld_http::{ResponsesSuccessCodes, UnifiedMiddleware};
+use std::{sync::Arc, time::Duration};
+pub use types::StartupError;
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), StartupError> {
+    // Initialize environment
     dotenv().ok();
     env_logger::init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://localhost/simbld_auth".to_string());
+    println!("🚀 Starting simbld_auth server");
 
-    let database = Database::new(&database_url).await.expect("Failed to connect to the database");
+    // Load configuration
+    let config = config::load_config().map_err(|e| {
+        eprintln!("❌ Configuration error: {}", e);
+        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::Config(e.to_string())
+    })?;
 
-    database.setup_tables().await.expect("Failed to setup database tables");
+    // Connect to database
+    let db = sqlx::Database::new(&config.database_url).await.map_err(|e| {
+        eprintln!("❌ Database connection error: {}", e);
+        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::Database(e.to_string())
+    })?;
 
-    let db_data = web::Data::new(Arc::new(database));
+    let db = Arc::new(db);
+    let bind_address = config::get_bind_address(&config);
 
-    let bind_address =
-        std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+    println!("✅ Configuration loaded–Status: {:?}", ResponsesSuccessCodes::Ok);
+    println!("✅ Database connected–Status: {:?}", ResponsesSuccessCodes::Ok);
+    println!("🌐 Server binding to: {}", bind_address);
+    println!("📊 Rate limit: {} req/min", config.rate_limit);
+    println!("🔗 CORS origins: {:?}", config.cors_origins);
 
-    let cors_origins: Vec<String> = std::env::var("CORS_ORIGINS")
-        .unwrap_or_else(|_| "*".to_string())
-        .split(',')
-        .map(str::to_string)
-        .collect();
-
-    let rate_limit: usize =
-        std::env::var("RATE_LIMIT").unwrap_or_else(|_| "100".to_string()).parse().unwrap_or(100);
-
-    println!("🚀 Server started on {bind_address}");
-    println!("📊 Rate limit: {rate_limit} req/min");
-
-    HttpServer::new(move || {
+    // Start HTTP server
+    let server_result = HttpServer::new(move || {
         App::new()
-            .app_data(db_data.clone())
+            // Inject dependencies
+            .app_data(web::Data::new(db.clone()))
+            .app_data(web::Data::new(config.clone()))
             .wrap(UnifiedMiddleware::simple(
-                cors_origins.clone(),
-                rate_limit,
+                config.cors_origins.clone(),
+                config.rate_limit,
                 Duration::from_secs(60),
             ))
-            .wrap(HttpInterceptor)
-            .wrap(AuthMiddleware)
-            .route("/auth/register", web::post().to(register_user))
-            .route("/auth/login", web::post().to(login_user))
-            .route("/health", web::get().to(|| async { ResponsesSuccessCodes::Ok.into_response() }))
+            .wrap(Logger::default())
+            .service(
+                web::scope("/api/v1")
+                    .route("/health", web::get().to(health_check))
+                    .configure(configure_protected_api),
+            )
+            // Root health check
+            .route("/health", web::get().to(health_check))
     })
-    .bind(bind_address)?
+    .bind(&bind_address)
+    .map_err(|e| {
+        eprintln!("❌ Server binding error: {}", e);
+        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::ServerBind(format!("Failed to bind to {}: {}", bind_address, e))
+    })?
     .run()
-    .await
+    .await;
+
+    // Handle server runtime errors
+    server_result.map_err(|e| {
+        eprintln!("❌ Server runtime error: {}", e);
+        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
+        StartupError::ServerBind(format!("Server runtime error: {}", e))
+    })?;
+
+    println!("✅ simbld_auth server shutdown complete");
+    Ok(())
 }

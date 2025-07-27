@@ -5,17 +5,16 @@
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2,
+    Argon2, Config as Argon2Config, Variant,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use rand::Rng;
+use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
-use crate::auth::mfa::MfaMethod;
-use crate::postgres::config::AppConfig;
-use crate::user::error::ApiError;
+use crate::auth::mfa::totp::MfaMethod;
 
 /// Provider for recovery codes
 #[derive(Debug, Clone)]

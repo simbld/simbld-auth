@@ -15,8 +15,9 @@ pub mod sms;
 pub mod totp;
 pub mod webauthn;
 
+use crate::auth::dto::MfaType;
 pub use backup_codes::{BackupCodeError, BackupCodeService};
-pub use totp::{MfaType, TotpError, TotpService};
+pub use totp::{TotpError, TotpService};
 
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};

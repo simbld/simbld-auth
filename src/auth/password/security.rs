@@ -1,41 +1,83 @@
-//! Password security and cryptography utilities.
+//! Password security and cryptography utilities
 //!
 //! Provides functions for secure password handling:
 //! - Password hashing with Argon2id
-//! - Password verification
+//! - Password verification  
 //! - Password strength estimation
-//! - Password breach checking (HIBP integration)
+//! - Password breach checking integration ready
 
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2,
-};
+use argon2::password_hash::{rand_core::OsRng, SaltString};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use serde::{Deserialize, Serialize};
+use std::fmt;
 use thiserror::Error;
-use zxcvbn::zxcvbn;
 
-/// Number of iterations for Argon2id
+/// 🔒 Secure password wrapper with automatic redaction
+#[derive(Clone, Deserialize)]
+pub struct SecurePassword {
+    #[serde(skip_serializing)]
+    password: String,
+}
+
+impl SecurePassword {
+    /// Create a new secure password
+    pub fn new(password: String) -> Self {
+        Self {
+            password,
+        }
+    }
+
+    /// Expose the secret for hashing/verification
+    pub fn expose_secret(&self) -> &str {
+        &self.password
+    }
+}
+
+/// 🔒 Mask in JSON serialization
+impl Serialize for SecurePassword {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str("[REDACTED]")
+    }
+}
+
+// 🔒 Mask in Println.("{:}", password)
+impl fmt::Debug for SecurePassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecurePassword").field("password", &"[REDACTED]").finish()
+    }
+}
+
+// 🔒 Mask in Println.("{}", password)
+impl fmt::Display for SecurePassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[REDACTED]")
+    }
+}
+
+/// Password security configuration
 const ARGON2_TIME_COST: u32 = 3;
-/// Memory cost parameter (in KB)
 const ARGON2_MEMORY_COST: u32 = 65536; // 64 MB
-/// Parallelism parameter
 const ARGON2_PARALLELISM: u32 = 4;
 
+/// Password-related errors
 #[derive(Debug, Error)]
 pub enum PasswordError {
     #[error("Failed to hash password: {0}")]
     HashingError(String),
-
     #[error("Failed to verify password: {0}")]
     VerificationError(String),
-
     #[error("Password too weak (score: {0}/4)")]
     TooWeak(u8),
-
     #[error("Password has been previously compromised")]
     Compromised,
+    #[error("Password doesn't meet complexity requirements")]
+    InsufficientComplexity,
 }
 
-/// Password strength level
+/// Password strength levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PasswordStrength {
     VeryWeak = 0,
@@ -61,6 +103,11 @@ impl From<u8> for PasswordStrength {
 pub struct PasswordService;
 
 impl PasswordService {
+    /// Hash a SecurePassword using Argon2id
+    pub fn hash_secure_password(password: &SecurePassword) -> Result<String, PasswordError> {
+        Self::hash_password(password.expose_secret())
+    }
+
     /// Hash a password using Argon2id with secure parameters
     pub fn hash_password(password: &str) -> Result<String, PasswordError> {
         let salt = SaltString::generate(&mut OsRng);
@@ -77,86 +124,87 @@ impl PasswordService {
             .map_err(|e| PasswordError::HashingError(e.to_string()))
     }
 
-    /// Verify a password against a previously generated hash
+    /// Verify a SecurePassword against hash
+    pub fn verify_secure_password(
+        password: &SecurePassword,
+        hash: &str,
+    ) -> Result<bool, PasswordError> {
+        Self::verify_password(password.expose_secret(), hash)
+    }
+
+    /// Verify a password against hash
     pub fn verify_password(password: &str, hash: &str) -> Result<bool, PasswordError> {
         let parsed_hash =
             PasswordHash::new(hash).map_err(|e| PasswordError::VerificationError(e.to_string()))?;
 
-        // Argon2id verification
         Ok(Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok())
     }
 
-    /// Estimate the strength of a password using zxcvbn
-    pub fn estimate_strength(password: &str, user_inputs: &[&str]) -> PasswordStrength {
-        let result = zxcvbn(password, user_inputs).unwrap_or_else(|_| {
-            // Fallback for very long passwords (which zxcvbn might reject)
-            // Long passwords are generally strong
-            zxcvbn::feedback::Feedback {
-                score: 4,
-                ..Default::default()
-            }
-            .into()
-        });
+    /// Validate password strength
+    pub fn validate_password_strength(password: &str) -> Result<(), PasswordError> {
+        if password.len() < 12 {
+            return Err(PasswordError::TooWeak(0));
+        }
 
-        PasswordStrength::from(result.score())
+        let has_lowercase = password.chars().any(|c| c.is_lowercase());
+        let has_uppercase = password.chars().any(|c| c.is_uppercase());
+        let has_digit = password.chars().any(|c| c.is_ascii_digit());
+        let has_special = password.chars().any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?".contains(c));
+
+        if !(has_lowercase && has_uppercase && has_digit && has_special) {
+            return Err(PasswordError::InsufficientComplexity);
+        }
+
+        Ok(())
     }
 
-    /// Check if a password meets minimum strength requirements
+    /// Estimate password strength (0-4 scale)
+    pub fn estimate_strength(password: &str, user_inputs: &[&str]) -> PasswordStrength {
+        let mut score = 0u8;
+
+        // Length check
+        if password.len() >= 8 {
+            score += 1;
+        }
+        if password.len() >= 12 {
+            score += 1;
+        }
+
+        // Character variety
+        let has_lower = password.chars().any(|c| c.is_lowercase());
+        let has_upper = password.chars().any(|c| c.is_uppercase());
+        let has_digit = password.chars().any(|c| c.is_ascii_digit());
+        let has_special = password.chars().any(|c| !c.is_alphanumeric());
+
+        if has_lower && has_upper {
+            score += 1;
+        }
+        if has_digit && has_special {
+            score += 1;
+        }
+
+        // Penalize common patterns
+        if user_inputs.iter().any(|&input| password.to_lowercase().contains(&input.to_lowercase()))
+        {
+            score = score.saturating_sub(1);
+        }
+
+        PasswordStrength::from(score)
+    }
+
+    /// Check if password meets minimum strength requirements
     pub fn meets_strength_requirements(
         password: &str,
         user_inputs: &[&str],
-        minimum_strength: PasswordStrength,
+        min_strength: PasswordStrength,
     ) -> Result<(), PasswordError> {
         let strength = Self::estimate_strength(password, user_inputs);
-        if strength >= minimum_strength {
-            Ok(())
-        } else {
-            Err(PasswordError::TooWeak(strength as u8))
+
+        if strength < min_strength {
+            return Err(PasswordError::TooWeak(strength as u8));
         }
-    }
 
-    /// Check if a password has been compromised in known data breaches
-    ///
-    /// Uses the k-anonymity model to check against the HaveIBeenPwned API
-    #[cfg(feature = "hibp-check")]
-    pub async fn check_password_breach(password: &str) -> Result<bool, PasswordError> {
-        use reqwest::Client;
-        use sha1::{Digest, Sha1};
-
-        // Generate SHA-1 hash of the password
-        let mut hasher = Sha1::new();
-        hasher.update(password.as_bytes());
-        let hash = hasher.finalize();
-
-        // Convert to uppercase hex string
-        let hash_hex = format!("{:X}", hash);
-        let (prefix, suffix) = hash_hex.split_at(5);
-
-        // Query the HIBP API
-        let client = Client::new();
-        let url = format!("https://api.pwnedpasswords.com/range/{}", prefix);
-
-        match client.get(&url).send().await {
-            Ok(response) => {
-                if let Ok(body) = response.text().await {
-                    // Check if our hash suffix is in the response
-                    for line in body.lines() {
-                        if let Some(idx) = line.find(':') {
-                            let hash_suffix = &line[0..idx];
-                            if hash_suffix.eq_ignore_ascii_case(suffix) {
-                                return Ok(true); // Password has been compromised
-                            }
-                        }
-                    }
-                    Ok(false) // Not found in breached passwords
-                } else {
-                    Err(PasswordError::VerificationError(
-                        "Failed to parse API response".to_string(),
-                    ))
-                }
-            },
-            Err(e) => Err(PasswordError::VerificationError(format!("API request failed: {}", e))),
-        }
+        Ok(())
     }
 }
 
@@ -170,7 +218,7 @@ mod tests {
 
         let hash = PasswordService::hash_password(password).expect("Failed to hash password");
 
-        // Verify correct password
+        // Verify the correct password
         let is_valid =
             PasswordService::verify_password(password, &hash).expect("Failed to verify password");
         assert!(is_valid, "Password verification should succeed");
@@ -182,8 +230,19 @@ mod tests {
     }
 
     #[test]
+    fn test_secure_password_wrapper() {
+        let password = SecurePassword::new("test_password".to_string());
+        let hash = PasswordService::hash_secure_password(&password)
+            .expect("Failed to hash secure password");
+
+        let is_valid = PasswordService::verify_secure_password(&password, &hash)
+            .expect("Failed to verify a secure password");
+        assert!(is_valid, "Secure password verification should succeed");
+    }
+
+    #[test]
     fn test_password_strength() {
-        // Very weak password
+        // Weak password
         let strength = PasswordService::estimate_strength("password", &[]);
         assert!(matches!(strength, PasswordStrength::VeryWeak | PasswordStrength::Weak));
 
@@ -210,5 +269,45 @@ mod tests {
             PasswordStrength::Medium,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_password_validation() {
+        // Too short
+        let result = PasswordService::validate_password_strength("short");
+        assert!(matches!(result, Err(PasswordError::TooWeak(_))));
+
+        // Missing complexity
+        let result = PasswordService::validate_password_strength("only lowercase123");
+        assert!(matches!(result, Err(PasswordError::InsufficientComplexity)));
+
+        // Valid password
+        let result = PasswordService::validate_password_strength("ValidPassword123!");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_secure_password_serialization() {
+        let password = SecurePassword::new("secret123".to_string());
+        let serialized = serde_json::to_string(&password).unwrap();
+        assert_eq!(serialized, r#""[REDACTED]""#);
+    }
+
+    #[test]
+    fn test_no_password_leaks() {
+        let password = SecurePassword::new("supersecret123".to_string());
+
+        // Test Debug
+        let debug_str = format!("{:?}", password);
+        assert!(!debug_str.contains("supersecret123"));
+        assert!(debug_str.contains("[REDACTED]"));
+
+        // Test Display
+        let display_str = format!("{}", password);
+        assert_eq!(display_str, "[REDACTED]");
+
+        // Test Serialize
+        let json = serde_json::to_string(&password).unwrap();
+        assert_eq!(json, "\"[REDACTED]\"");
     }
 }
