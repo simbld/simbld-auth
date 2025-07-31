@@ -1,92 +1,129 @@
-//! Simbld_auth Secure Authentication Service
-//!
-//! A comprehensive authentication microservice with multiple provider support using simbld_http API
+//! Serveur ultra-minimal pour tester les routes
+//! SANS aucune dépendance compliquée
 
-pub mod auth;
-pub mod health;
-pub mod protected;
-pub mod sqlx;
-pub mod types;
-pub mod user;
-pub mod utils;
+use actix_web::{web, App, HttpResponse, HttpServer, Result};
+use serde_json::json;
 
-use crate::health::health_check;
-use crate::protected::configure_protected_api;
-use crate::sqlx::config;
-use actix_web::{middleware::Logger, web, App, HttpServer};
-use dotenvy::dotenv;
-use simbld_http::responses::ResponsesServerCodes;
-use simbld_http::{ResponsesSuccessCodes, UnifiedMiddleware};
-use std::{sync::Arc, time::Duration};
-pub use types::StartupError;
+/// Route de santé ultra-simple (pas de modules externes)
+async fn health_check() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "status": "healthy",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "version": "1.0.0",
+        "message": "Serveur de test fonctionnel"
+    })))
+}
+
+/// Route protégée mockée (sans vraie auth)
+async fn mock_protected() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "message": "Protected route (mocked)",
+        "user_id": "mock-user-123",
+        "authenticated": true
+    })))
+}
+
+/// Route utilisateurs mockée
+async fn mock_users() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "users": [
+            {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "username": "testuser",
+                "email": "test@example.com",
+                "status": "active"
+            }
+        ],
+        "total": 1
+    })))
+}
+
+/// Route utilisateur par ID mockée
+async fn mock_user_by_id(path: web::Path<String>) -> Result<HttpResponse> {
+    let user_id = path.into_inner();
+    Ok(HttpResponse::Ok().json(json!({
+        "id": user_id,
+        "username": "testuser",
+        "email": "test@example.com",
+        "firstname": "Test",
+        "lastname": "User",
+        "status": "active",
+        "email_verified": true,
+        "created_at": chrono::Utc::now().to_rfc3339()
+    })))
+}
+
+/// Route de login mockée
+async fn mock_login(payload: web::Json<serde_json::Value>) -> Result<HttpResponse> {
+    let email = payload.get("email").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+    Ok(HttpResponse::Ok().json(json!({
+        "access_token": "mock_access_token_12345",
+        "refresh_token": "mock_refresh_token_67890",
+        "Expires in": 3600,
+        "user": {
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "email": email,
+            "username": "testuser"
+        }
+    })))
+}
+
+/// Route de register mockée
+async fn mock_register(payload: web::Json<serde_json::Value>) -> Result<HttpResponse> {
+    let email = payload.get("email").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+    Ok(HttpResponse::Created().json(json!({
+        "user_id": "550e8400-e29b-41d4-a716-446655440000",
+        "email": email,
+        "message": "User registered successfully"
+    })))
+}
+
+/// Configuration des routes ultra-simples
+fn configure_routes(cfg: &mut web::ServiceConfig) {
+    cfg
+        // Routes de santé
+        .route("/api/v1/health", web::get().to(health_check))
+        // Routes d'authentification mocks
+        .service(
+            web::scope("/api/v1/auth")
+                .route("/login", web::post().to(mock_login))
+                .route("/register", web::post().to(mock_register)),
+        )
+        // Routes protégées mocks
+        .service(
+            web::scope("/api/v1/protected")
+                .route("", web::get().to(mock_protected))
+                .route("/profile", web::get().to(mock_protected))
+                .route("/settings", web::put().to(mock_protected))
+                .route("/orders", web::get().to(mock_protected))
+                .route("/logout", web::post().to(mock_protected)),
+        )
+        // Routes utilisateurs mocks
+        .service(
+            web::scope("/api/v1/users")
+                .route("", web::get().to(mock_users))
+                .route("/{id}", web::get().to(mock_user_by_id))
+                .route("/stats", web::get().to(mock_users))
+                .route("/by-email", web::get().to(mock_users))
+                .route("/by-username", web::get().to(mock_users)),
+        );
+}
 
 #[actix_web::main]
-async fn main() -> Result<(), StartupError> {
-    // Initialize environment
-    dotenv().ok();
+async fn main() -> std::io::Result<()> {
     env_logger::init();
 
-    println!("🚀 Starting simbld_auth server");
+    println!("🚀 Serveur ultra-minimal démarré sur http://localhost:3000");
+    println!("📋 Routes disponibles :");
+    println!("   GET /api/v1/health");
+    println!("   POST /api/v1/auth/login");
+    println!("   POST /api/v1/auth/register");
+    println!("   GET /api/v1/protected");
+    println!("   GET /api/v1/protected/profile");
+    println!("   GET /api/v1/users");
+    println!("   GET /api/v1/users/{{id}}");
 
-    // Load configuration
-    let config = config::load_config().map_err(|e| {
-        eprintln!("❌ Configuration error: {}", e);
-        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
-        StartupError::Config(e.to_string())
-    })?;
-
-    // Connect to database
-    let db = sqlx::Database::new(&config.database_url).await.map_err(|e| {
-        eprintln!("❌ Database connection error: {}", e);
-        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
-        StartupError::Database(e.to_string())
-    })?;
-
-    let db = Arc::new(db);
-    let bind_address = config::get_bind_address(&config);
-
-    println!("✅ Configuration loaded–Status: {:?}", ResponsesSuccessCodes::Ok);
-    println!("✅ Database connected–Status: {:?}", ResponsesSuccessCodes::Ok);
-    println!("🌐 Server binding to: {}", bind_address);
-    println!("📊 Rate limit: {} req/min", config.rate_limit);
-    println!("🔗 CORS origins: {:?}", config.cors_origins);
-
-    // Start HTTP server
-    let server_result = HttpServer::new(move || {
-        App::new()
-            // Inject dependencies
-            .app_data(web::Data::new(db.clone()))
-            .app_data(web::Data::new(config.clone()))
-            .wrap(UnifiedMiddleware::simple(
-                config.cors_origins.clone(),
-                config.rate_limit,
-                Duration::from_secs(60),
-            ))
-            .wrap(Logger::default())
-            .service(
-                web::scope("/api/v1")
-                    .route("/health", web::get().to(health_check))
-                    .configure(configure_protected_api),
-            )
-            // Root health check
-            .route("/health", web::get().to(health_check))
-    })
-    .bind(&bind_address)
-    .map_err(|e| {
-        eprintln!("❌ Server binding error: {}", e);
-        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
-        StartupError::ServerBind(format!("Failed to bind to {}: {}", bind_address, e))
-    })?
-    .run()
-    .await;
-
-    // Handle server runtime errors
-    server_result.map_err(|e| {
-        eprintln!("❌ Server runtime error: {}", e);
-        eprintln!("This would be HTTP: {:?}", ResponsesServerCodes::InternalServerError);
-        StartupError::ServerBind(format!("Server runtime error: {}", e))
-    })?;
-
-    println!("✅ simbld_auth server shutdown complete");
-    Ok(())
+    HttpServer::new(|| App::new().configure(configure_routes)).bind("127.0.0.1:3000")?.run().await
 }
