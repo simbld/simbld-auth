@@ -16,7 +16,6 @@ dotenvy = "0.15.7"
 argon2 = "0.5.3"
 jsonwebtoken = "9.3.0"
 chrono = { version = "0.4.39", features = ["serde"] }
-uuid = { version = "1.11.0", features = ["v4"] }
 tokio-postgres = { version = "0.7.12", features = ["with-uuid-0_8"] }
 deadpool-postgres = "0.14.1"
 serde = { version = "1.0.216", features = ["derive"] }
@@ -55,4 +54,5 @@ gethostname = "1.0.2"
 hex = "0.4"
 sha2 = "0.10"
 lazy_static = "1.5.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
