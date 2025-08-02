@@ -1,6 +1,11 @@
 //! Minimal HTTP server for testing API routes
 //! Production-ready mock implementation without complex dependencies
 
+mod simple_health;
+
+use crate::simple_health::{
+    configure_simple_health_routes, database_test_only, simple_health_with_db,
+};
 use actix_web::{web, App, HttpResponse, HttpServer, Result};
 use serde_json::json;
 
@@ -11,6 +16,61 @@ async fn health_check() -> Result<HttpResponse> {
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "version": "1.0.0",
         "message": "API server is running"
+    })))
+}
+
+/// Simple detailed health check - mock version
+async fn simple_detailed_health() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "status": "healthy",
+        "service": "API Mock Server",
+        "version": "1.0.0",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "database": {
+            "status": "mocked",
+            "message": "No real database connected - using mock responses",
+            "postgresql_available": false,
+            "connection_string": "NOT_CONFIGURED",
+            "response_time_ms": null
+        },
+        "system": {
+            "hostname": "localhost",
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+            "pid": std::process::id(),
+            "cpu_cores": num_cpus::get()
+        },
+        "metrics": {
+            "uptime_seconds": 3600,
+            "total_requests": 42,
+            "active_connections": 1,
+            "avg_response_time_ms": 45.2,
+            "error_rate_percent": 0.1
+        }
+    })))
+}
+
+/// Readiness probe
+async fn readiness_probe() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "ready": true,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "checks": {
+            "server": "healthy",
+            "database": "mocked",
+            "memory": "normal",
+            "disk": "sufficient"
+        }
+    })))
+}
+
+/// Liveness probe
+async fn liveness_probe() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "alive": true,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "pid": std::process::id(),
+        "uptime": 3600
     })))
 }
 
@@ -227,7 +287,7 @@ async fn mock_login(payload: web::Json<serde_json::Value>) -> Result<HttpRespons
         "access_token": "mock_access_token_12345",
         "refresh_token": "mock_refresh_token_67890",
         "token_type": "Bearer",
-        "Expires in": 3600,
+        "expires_in": 3600,
         "user": {
             "id": "550e8400-e29b-41d4-a716-446655440000",
             "email": email.unwrap(),
@@ -261,11 +321,57 @@ async fn mock_register(payload: web::Json<serde_json::Value>) -> Result<HttpResp
     })))
 }
 
+/// Mock database connection test - simulates real DB connectivity
+async fn mock_db_test() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "database_status": "mocked",
+        "connection": "simulated",
+        "test_query": "SELECT 1",
+        "result": "success (mock)",
+        "message": "This is a mock response. Real database would return actual connection status.",
+        "postgresql_available": false,
+        "mock_mode": true,
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    })))
+}
+
+/// Mock database tables info - simulates table listing
+async fn mock_db_tables() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "tables": [
+            {
+                "name": "users",
+                "rows": 1547,
+                "size": "2.3MB"
+            },
+            {
+                "name": "sessions",
+                "rows": 234,
+                "size": "0.8MB"
+            },
+            {
+                "name": "roles",
+                "rows": 12,
+                "size": "0.1MB"
+            }
+        ],
+        "total_tables": 3,
+        "database_size": "3.2MB",
+        "status": "mocked",
+        "message": "Mock table information. A real database would show actual tables.",
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    })))
+}
+
 /// Configure all API routes and middleware
 fn configure_routes(cfg: &mut web::ServiceConfig) {
-    cfg
-        // Health check endpoint
+    cfg.configure(configure_simple_health_routes)
+        // ⭐ HEALTH ROUTES
         .route("/api/v1/health", web::get().to(health_check))
+        .route("/health", web::get().to(health_check))
+        .route("/health/detailed", web::get().to(simple_detailed_health))
+        .route("/health/ready", web::get().to(readiness_probe))
+        .route("/health/live", web::get().to(liveness_probe))
         // Authentication routes
         .service(
             web::scope("/api/v1/auth")
@@ -296,6 +402,17 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
                 .route("/{id}/status", web::put().to(mock_update_status))
                 .route("/{id}/roles", web::post().to(mock_assign_role))
                 .route("/{id}/roles", web::get().to(mock_get_user_roles)),
+        )
+        // ⭐ DEBUG ROUTES - Pour tester la connexion BDD
+        .service(
+            web::scope("/api/v1/debug")
+                .route("/db-test", web::get().to(mock_db_test))
+                .route("/db-tables", web::get().to(mock_db_tables)),
+        )
+        .service(
+            web::scope("/simple-health")
+                .route("", web::get().to(simple_health_with_db))
+                .route("/db-only", web::get().to(database_test_only)),
         );
 }
 
@@ -309,27 +426,36 @@ async fn main() -> std::io::Result<()> {
     println!("\n📋 Available endpoints:");
     println!("┌─ Health & System");
     println!("│  GET  /api/v1/health");
+    println!("│  GET  /health           ⭐ WORKING!");
+    println!("│  GET  /health/detailed  ⭐ WORKING!");
+    println!("│  GET  /health/ready     ⭐ WORKING!");
+    println!("│  GET  /health/live      ⭐ WORKING!");
     println!("├─ Authentication");
     println!("│  POST /api/v1/auth/login");
     println!("│  POST /api/v1/auth/register");
     println!("├─ Protected Routes");
     println!("│  GET  /api/v1/protected");
     println!("│  GET  /api/v1/protected/profile");
-    println!("│  PUT /api/v1/protected/settings");
+    println!("│  PUT  /api/v1/protected/settings");
     println!("│  GET  /api/v1/protected/orders");
     println!("│  POST /api/v1/protected/logout");
-    println!("└─ User Management");
-    println!("GET /api/v1/users");
-    println!("GET /api/v1/users/{{id}}");
-    println!("PUT /api/v1/users/{{id}}/profile");
-    println!("PUT /api/v1/users/{{id}}/password");
-    println!("PUT /api/v1/users/{{id}}/status");
-    println!("POST /api/v1/users/{{id}}/roles");
-    println!("GET /api/v1/users/{{id}}/roles");
-    println!("GET /api/v1/users/stats");
-    println!("GET /api/v1/users/by-email");
-    println!("GET /api/v1/users/by-username");
+    println!("├─ User Management");
+    println!("│  GET  /api/v1/users");
+    println!("│  GET  /api/v1/users/{{id}}");
+    println!("│  PUT  /api/v1/users/{{id}}/profile");
+    println!("│  PUT  /api/v1/users/{{id}}/password  ⭐ TARGET!");
+    println!("│  PUT  /api/v1/users/{{id}}/status");
+    println!("│  POST /api/v1/users/{{id}}/roles");
+    println!("│  GET  /api/v1/users/{{id}}/roles");
+    println!("│  GET  /api/v1/users/stats");
+    println!("│  GET  /api/v1/users/by-email");
+    println!("│  GET  /api/v1/users/by-username");
+    println!("└─ Database Debug");
+    println!("   GET  /api/v1/debug/db-test    ⭐ NEW!");
+    println!("   GET  /api/v1/debug/db-tables  ⭐ NEW!");
     println!("\n💡 All endpoints are mocked for testing purposes");
+    println!("🗄️ Database: MOCKED - No real PostgreSQL connection");
+    println!("🔧 Use debug endpoints to simulate DB connectivity checks");
 
     // Start HTTP server
     HttpServer::new(|| App::new().configure(configure_routes)).bind("127.0.0.1:3000")?.run().await
