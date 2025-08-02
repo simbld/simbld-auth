@@ -294,3 +294,54 @@ Content-Type: application/json
 #
 # Expected responses should be JSON with appropriate status codes
 ### =============================================================================
+### 🗄️ DATABASE CONNECTION TESTING
+### =============================================================================
+
+### Test DB 1: Health Check with Database Status
+GET http://localhost:3000/api/v1/health/detailed
+Authorization: mock_access_token_12345
+
+### Test DB 2: Database Readiness Probe
+GET http://localhost:3000/api/v1/health/ready
+Authorization: mock_access_token_12345
+
+### Test DB 3: Database Liveness Check
+GET http://localhost:3000/api/v1/health/live
+Authorization: mock_access_token_12345
+
+### =============================================================================
+### 🧪 REAL DATABASE OPERATIONS (IF CONNECTED)
+### =============================================================================
+
+### Test Real DB 1: Create Real User (would fail with mock)
+POST http://localhost:3000/api/v1/users/real
+Authorization: mock_access_token_12345
+Content-Type: application/json
+
+{
+  "email": "realuser@example.com",
+  "username": "realuser",
+  "password": "RealPassword123!",
+  "firstname": "Real",
+  "lastname": "User"
+}
+
+### Test Real DB 2: Query Database Directly
+GET http://localhost:3000/api/v1/debug/db-test
+Authorization: mock_access_token_12345
+
+### Test Real DB 3: Check Database Tables
+GET http://localhost:3000/api/v1/debug/db-tables
+Authorization: mock_access_token_12345
+
+### =============================================================================
+### 📊 MOCK VS REAL COMPARISON
+### =============================================================================
+
+### Mock Response (Current)
+GET http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000
+Authorization: mock_access_token_12345
+
+### Real DB Response (Would be different)
+GET http://localhost:3000/api/v1/users/real/550e8400-e29b-41d4-a716-446655440000
+Authorization: mock_access_token_12345
