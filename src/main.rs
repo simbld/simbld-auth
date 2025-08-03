@@ -3,9 +3,7 @@
 
 mod simple_health;
 
-use crate::simple_health::{
-    configure_simple_health_routes, database_test_only, simple_health_with_db,
-};
+use crate::simple_health::{database_test_only, simple_health_with_db};
 use actix_web::{web, App, HttpResponse, HttpServer, Result};
 use serde_json::json;
 
@@ -365,59 +363,59 @@ async fn mock_db_tables() -> Result<HttpResponse> {
 
 /// Configure all API routes and middleware
 fn configure_routes(cfg: &mut web::ServiceConfig) {
-    cfg.configure(configure_simple_health_routes)
-        // ⭐ HEALTH ROUTES
-        .route("/api/v1/health", web::get().to(health_check))
-        .route("/health", web::get().to(health_check))
-        .route("/health/detailed", web::get().to(simple_detailed_health))
-        .route("/health/ready", web::get().to(readiness_probe))
-        .route("/health/live", web::get().to(liveness_probe))
-        // Authentication routes
-        .service(
-            web::scope("/api/v1/auth")
-                .route("/login", web::post().to(mock_login))
-                .route("/register", web::post().to(mock_register)),
-        )
-        // Protected routes (require authentication)
-        .service(
-            web::scope("/api/v1/protected")
-                .route("", web::get().to(mock_protected))
-                .route("/profile", web::get().to(mock_protected))
-                .route("/settings", web::put().to(mock_protected))
-                .route("/orders", web::get().to(mock_protected))
-                .route("/logout", web::post().to(mock_protected)),
-        )
-        // User management routes
-        .service(
-            web::scope("/api/v1/users")
-                // User collection operations
-                .route("", web::get().to(mock_users))
-                .route("/stats", web::get().to(mock_user_stats))
-                .route("/by-email", web::get().to(mock_user_by_email))
-                .route("/by-username", web::get().to(mock_user_by_username))
-                // Individual user operations
-                .route("/{id}", web::get().to(mock_user_by_id))
-                .route("/{id}/profile", web::put().to(mock_update_profile))
-                .route("/{id}/password", web::put().to(mock_change_password))
-                .route("/{id}/status", web::put().to(mock_update_status))
-                .route("/{id}/roles", web::post().to(mock_assign_role))
-                .route("/{id}/roles", web::get().to(mock_get_user_roles)),
-        )
-        // ⭐ DEBUG ROUTES - Pour tester la connexion BDD
-        .service(
-            web::scope("/api/v1/debug")
-                .route("/db-test", web::get().to(mock_db_test))
-                .route("/db-tables", web::get().to(mock_db_tables)),
-        )
-        .service(
-            web::scope("/simple-health")
-                .route("", web::get().to(simple_health_with_db))
-                .route("/db-only", web::get().to(database_test_only)),
-        );
+    cfg.service(
+        web::scope("/simple-health")
+            .route("", web::get().to(simple_health_with_db))
+            .route("/db-only", web::get().to(database_test_only)),
+    )
+    // ⭐ HEALTH ROUTES
+    .route("/api/v1/health", web::get().to(health_check))
+    .route("/health", web::get().to(health_check))
+    .route("/health/detailed", web::get().to(simple_detailed_health))
+    .route("/health/ready", web::get().to(readiness_probe))
+    .route("/health/live", web::get().to(liveness_probe))
+    // Authentication routes
+    .service(
+        web::scope("/api/v1/auth")
+            .route("/login", web::post().to(mock_login))
+            .route("/register", web::post().to(mock_register)),
+    )
+    // Protected routes (require authentication)
+    .service(
+        web::scope("/api/v1/protected")
+            .route("", web::get().to(mock_protected))
+            .route("/profile", web::get().to(mock_protected))
+            .route("/settings", web::put().to(mock_protected))
+            .route("/orders", web::get().to(mock_protected))
+            .route("/logout", web::post().to(mock_protected)),
+    )
+    // User management routes
+    .service(
+        web::scope("/api/v1/users")
+            // User collection operations
+            .route("", web::get().to(mock_users))
+            .route("/stats", web::get().to(mock_user_stats))
+            .route("/by-email", web::get().to(mock_user_by_email))
+            .route("/by-username", web::get().to(mock_user_by_username))
+            // Individual user operations
+            .route("/{id}", web::get().to(mock_user_by_id))
+            .route("/{id}/profile", web::put().to(mock_update_profile))
+            .route("/{id}/password", web::put().to(mock_change_password))
+            .route("/{id}/status", web::put().to(mock_update_status))
+            .route("/{id}/roles", web::post().to(mock_assign_role))
+            .route("/{id}/roles", web::get().to(mock_get_user_roles)),
+    )
+    // ⭐ DEBUG ROUTES - Pour tester la connexion BDD
+    .service(
+        web::scope("/api/v1/debug")
+            .route("/db-test", web::get().to(mock_db_test))
+            .route("/db-tables", web::get().to(mock_db_tables)),
+    );
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenvy::dotenv().ok();
     // Initialize logging
     env_logger::init();
 
