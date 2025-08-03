@@ -354,3 +354,38 @@ Authorization: mock_access_token_12345
 ### Real DB Response (Would be different)
 GET http://localhost:3000/api/v1/users/real/550e8400-e29b-41d4-a716-446655440000
 Authorization: mock_access_token_12345
+
+### =============================================================================
+### 🏥 SIMPLE HEALTH CHECKS (avec vraie connexion DB)
+### =============================================================================
+
+### Test Simple Health - Route principale avec test DB réel
+GET http://localhost:3000/simple-health
+
+### Test Simple Health - DB uniquement
+GET http://localhost:3000/simple-health/db-only
+
+### Test Simple Health avec DATABASE_URL custom
+# @name healthWithCustomDB
+GET http://localhost:3000/simple-health
+# Note: Configure DATABASE_URL avant de lancer le serveur
+
+### Test Simple Health - Vérification des erreurs de connexion
+# Ce test montrera les vraies erreurs de connexion PostgreSQL
+GET http://localhost:3000/simple-health/db-only
+
+### =============================================================================
+### 🔄 COMPARAISON DES HEALTH CHECKS
+### =============================================================================
+
+### Health Check Standard (Mock)
+GET http://localhost:3000/health
+
+### Health Check Détaillé (Mock)
+GET http://localhost:3000/health/detailed
+
+### Simple Health Check (Vraie DB)
+GET http://localhost:3000/simple-health
+
+### Simple Health DB Test (Vraie DB)
+GET http://localhost:3000/simple-health/db-only
