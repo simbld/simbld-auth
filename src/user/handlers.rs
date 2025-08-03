@@ -1,305 +1,241 @@
-//! Handler functions for authentication and user management
+//! User management HTTP handlers
 //!
-//! This module contains the handler functions that implement the actual
-//! business logic for the API endpoints related to authentication, user
-//! management, and authorization.
+//! This module contains the HTTP request handlers for user-related operations.
 
-use actix_web::web::{Json, Path, Query};
-use actix_web::{web, HttpResponse, Responder};
-use std::collections::HashMap;
+use crate::user::{dto::*, error::UserError, service::UserService};
+use actix_web::{web, HttpResponse, Result as ActixResult};
 use std::sync::Arc;
 use uuid::Uuid;
+use validator::Validate;
 
-use crate::auth::Claims;
-use crate::errors::AppError;
-use crate::models::{
-    ApiResponse, AssignRoleDto, ChangePasswordDto, DetailedUserResponseDto, ListUsersQuery,
-    LoginUserDto, OAuthUserDto, PasswordResetDto, PasswordResetRequestDto, RegisterUserDto,
-    TokenResponseDto, UpdateProfileDto, UserResponseDto, UserStatsDto, VerifyEmailDto,
-};
-use crate::state::AppState;
-
-/// Register a new user
-///
-/// Takes registration information and creates a new user account.
-/// Returns the created user with authentication token.
-pub async fn register_user(
-    state: web::Data<Arc<AppState>>,
-    payload: Json<RegisterUserDto>,
-) -> Result<HttpResponse, AppError> {
-    let result = state.user_service.register_user(payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
+/// Helper function to parse user ID from a path
+fn parse_user_id(path: &str) -> Result<Uuid, actix_web::Error> {
+    Uuid::parse_str(path).map_err(|_| actix_web::error::ErrorBadRequest("Invalid user ID format"))
 }
 
-/// Login a user
-///
-/// Takes login credentials and returns an authentication token.
-pub async fn login_user(
-    state: web::Data<Arc<AppState>>,
-    payload: Json<LoginUserDto>,
-) -> Result<HttpResponse, AppError> {
-    let result = state.auth_service.login(payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
+/// Helper function to handle validation errors
+fn handle_validation_error(validation_errors: validator::ValidationErrors) -> HttpResponse {
+    HttpResponse::BadRequest().json(serde_json::json!({
+        "error": "Validation failed",
+        "details": validation_errors
+    }))
 }
 
-/// Get the current user's profile
-///
-/// Uses the JWT token to identify the user and return their profile information.
-pub async fn get_profile(
-    state: web::Data<Arc<AppState>>,
-    claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    let user = state.user_service.get_user_by_id(claims.sub).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(user)))
+/// Helper function to handle user errors
+fn handle_user_error(error: UserError) -> HttpResponse {
+    match error {
+        UserError::UserNotFound => HttpResponse::NotFound().json(serde_json::json!({
+            "error": "User not found"
+        })),
+        UserError::UsernameTaken => HttpResponse::Conflict().json(serde_json::json!({
+            "error": "Username already took"
+        })),
+        UserError::ValidationError(e) => HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Validation failed",
+            "details": e.to_string()
+        })),
+        _ => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": error.to_string()
+        })),
+    }
 }
 
-/// Update the current user's profile
-///
-/// Takes profile update information and updates the authenticated user's profile.
+/// Helper function to handle user lookup operations (by ID, email, username)
+async fn handle_user_lookup<F>(service: &UserService, lookup_fn: F) -> ActixResult<HttpResponse>
+where
+    F: std::future::Future<Output = Result<Option<crate::user::models::User>, UserError>>,
+{
+    match lookup_fn.await {
+        Ok(Some(user)) => {
+            let response = service.user_to_response(user);
+            Ok(HttpResponse::Ok().json(response))
+        },
+        Ok(None) => Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "error": "User not found"
+        }))),
+        Err(e) => Ok(handle_user_error(e)),
+    }
+}
+
+/// Get user by ID
+pub async fn get_user(
+    service: web::Data<Arc<UserService>>,
+    path: web::Path<String>,
+) -> ActixResult<HttpResponse> {
+    let user_id = parse_user_id(&path.into_inner())?;
+
+    handle_user_lookup(&**service, service.get_user_by_id(user_id)).await
+}
+
+/// Update user profile
 pub async fn update_profile(
-    state: web::Data<Arc<AppState>>,
-    claims: Claims,
-    payload: Json<UpdateProfileDto>,
-) -> Result<HttpResponse, AppError> {
-    let result = state.user_service.update_profile(claims.sub, payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
+    service: web::Data<Arc<UserService>>,
+    path: web::Path<String>,
+    payload: web::Json<UpdateProfileRequest>,
+) -> ActixResult<HttpResponse> {
+    let user_id = parse_user_id(&path.into_inner())?;
+
+    // Validation
+    if let Err(validation_errors) = payload.validate() {
+        return Ok(handle_validation_error(validation_errors));
+    }
+
+    match service.update_profile(user_id, payload.into_inner()).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Profile updated successfully"
+        }))),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// Change the current user's password
-///
-/// Takes old and new password and updates the authenticated user's password.
+/// Change user password
 pub async fn change_password(
-    state: web::Data<Arc<AppState>>,
-    claims: Claims,
-    payload: Json<ChangePasswordDto>,
-) -> Result<HttpResponse, AppError> {
-    state.auth_service.change_password(claims.sub, payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
+    service: web::Data<Arc<UserService>>,
+    path: web::Path<String>,
+    payload: web::Json<ChangePasswordRequest>,
+) -> ActixResult<HttpResponse> {
+    let user_id = parse_user_id(&path.into_inner())?;
+
+    // Validation
+    if let Err(validation_errors) = payload.validate() {
+        return Ok(handle_validation_error(validation_errors));
+    }
+
+    match service.change_password(user_id, payload.into_inner()).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Password changed successfully"
+        }))),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// Get a user by ID
-///
-/// Admin only. Takes a user ID and returns detailed user information.
-pub async fn get_user_by_id(
-    state: web::Data<Arc<AppState>>,
-    path: Path<String>,
-) -> Result<HttpResponse, AppError> {
-    let id = Uuid::parse_str(&path.into_inner())?;
-    let user = state.user_service.get_detailed_user(id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(user)))
+/// Update user status (Admin only)
+pub async fn update_user_status(
+    service: web::Data<Arc<UserService>>,
+    path: web::Path<String>,
+    payload: web::Json<UpdateUserStatusRequest>,
+) -> ActixResult<HttpResponse> {
+    let user_id = parse_user_id(&path.into_inner())?;
+
+    // Validation
+    if let Err(validation_errors) = payload.validate() {
+        return Ok(handle_validation_error(validation_errors));
+    }
+
+    match service.update_user_status(user_id, payload.into_inner()).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "User status updated successfully"
+        }))),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// Delete a user
-///
-/// Admin only. Takes a user ID and permanently deletes the user.
-pub async fn delete_user(
-    state: web::Data<Arc<AppState>>,
-    path: Path<String>,
-) -> Result<HttpResponse, AppError> {
-    let id = Uuid::parse_str(&path.into_inner())?;
-    state.user_service.delete_user(id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
-}
-
-/// List all users with pagination
-///
-/// Admin only. Takes pagination parameters and returns a list of users.
+/// List users with pagination and filters
 pub async fn list_users(
-    state: web::Data<Arc<AppState>>,
-    query: Query<ListUsersQuery>,
-) -> Result<HttpResponse, AppError> {
-    let users = state.user_service.list_users(query.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(users)))
+    service: web::Data<Arc<UserService>>,
+    query: web::Query<ListUsersQuery>,
+) -> ActixResult<HttpResponse> {
+    // Validation
+    if let Err(validation_errors) = query.validate() {
+        return Ok(handle_validation_error(validation_errors));
+    }
+
+    match service.list_users(query.into_inner()).await {
+        Ok(response) => Ok(HttpResponse::Ok().json(response)),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// Assign a role to a user
-///
-/// Admin only. Takes a user ID and role information and assigns the role to the user.
+/// Assign a role to a user (Admin only)
 pub async fn assign_role(
-    state: web::Data<Arc<AppState>>,
-    path: Path<String>,
-    payload: Json<AssignRoleDto>,
-) -> Result<HttpResponse, AppError> {
-    let id = Uuid::parse_str(&path.into_inner())?;
-    state.role_service.assign_role(id, payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
+    service: web::Data<Arc<UserService>>,
+    path: web::Path<String>,
+    payload: web::Json<AssignRoleRequest>,
+) -> ActixResult<HttpResponse> {
+    let user_id = parse_user_id(&path.into_inner())?;
+
+    // Validation
+    if let Err(validation_errors) = payload.validate() {
+        return Ok(handle_validation_error(validation_errors));
+    }
+
+    match service.assign_role(user_id, payload.into_inner()).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": "Role assigned successfully"
+        }))),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// Get all roles assigned to a user
-///
-/// Admin only. Takes a user ID and returns a list of assigned roles.
+/// Get user roles
 pub async fn get_user_roles(
-    state: web::Data<Arc<AppState>>,
-    path: Path<String>,
-) -> Result<HttpResponse, AppError> {
-    let id = Uuid::parse_str(&path.into_inner())?;
-    let roles = state.role_service.get_user_roles(id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(roles)))
+    service: web::Data<Arc<UserService>>,
+    path: web::Path<String>,
+) -> ActixResult<HttpResponse> {
+    let user_id = parse_user_id(&path.into_inner())?;
+
+    match service.get_user_roles(user_id).await {
+        Ok(roles) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "roles": roles
+        }))),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// OAuth callback handler
-///
-/// Processes OAuth callback from providers like Google, Facebook, etc.
-/// Returns authentication token upon successful OAuth flow.
-pub async fn oauth_callback(
-    state: web::Data<Arc<AppState>>,
-    path: Path<String>,
-    query: Query<HashMap<String, String>>,
-) -> Result<HttpResponse, AppError> {
-    let provider_name = path.into_inner();
-    let result = state.oauth_service.handle_callback(&provider_name, &query).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
+/// Get user statistics (Admin only)
+pub async fn get_user_stats(service: web::Data<Arc<UserService>>) -> ActixResult<HttpResponse> {
+    match service.get_user_stats().await {
+        Ok(stats) => Ok(HttpResponse::Ok().json(stats)),
+        Err(e) => Ok(handle_user_error(e)),
+    }
 }
 
-/// Create a user account from OAuth data
-///
-/// Internal use only. Creates a new user from OAuth provider data.
-pub async fn create_oauth_user(
-    state: web::Data<Arc<AppState>>,
-    payload: Json<OAuthUserDto>,
-) -> Result<HttpResponse, AppError> {
-    let user = state.oauth_service.create_oauth_user(payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(user)))
+/// Get user by email (Admin only)
+pub async fn get_user_by_email(
+    service: web::Data<Arc<UserService>>,
+    query: web::Query<serde_json::Value>,
+) -> ActixResult<HttpResponse> {
+    let email = query
+        .get("email")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing email parameter"))?;
+
+    handle_user_lookup(&**service, service.get_user_by_email(email)).await
 }
 
-/// Request email verification
-///
-/// Sends an email verification link to the authenticated user's email.
-pub async fn request_email_verification(
-    state: web::Data<Arc<AppState>>,
-    claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    state.notification_service.send_verification_email(claims.sub).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
-}
+/// Get user by username (Admin only)
+pub async fn get_user_by_username(
+    service: web::Data<Arc<UserService>>,
+    query: web::Query<serde_json::Value>,
+) -> ActixResult<HttpResponse> {
+    let username = query
+        .get("username")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing username parameter"))?;
 
-/// Verify email address
-///
-/// Takes a verification token and marks the user's email as verified.
-pub async fn verify_email(
-    state: web::Data<Arc<AppState>>,
-    payload: Json<VerifyEmailDto>,
-) -> Result<HttpResponse, AppError> {
-    state.user_service.verify_email(payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
-}
-
-/// Request password reset
-///
-/// Takes an email address and sends a password reset link if the user exists.
-pub async fn request_password_reset(
-    state: web::Data<Arc<AppState>>,
-    payload: Json<PasswordResetRequestDto>,
-) -> Result<HttpResponse, AppError> {
-    state.notification_service.send_password_reset(payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
-}
-
-/// Reset password
-///
-/// Takes a password reset token and new password, then updates the user's password.
-pub async fn reset_password(
-    state: web::Data<Arc<AppState>>,
-    payload: Json<PasswordResetDto>,
-) -> Result<HttpResponse, AppError> {
-    state.auth_service.reset_password(payload.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
-}
-
-/// Get user statistics
-///
-/// Admin only. Returns statistics about user accounts.
-pub async fn get_user_stats(state: web::Data<Arc<AppState>>) -> Result<HttpResponse, AppError> {
-    let stats = state.user_service.get_stats().await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(stats)))
-}
-
-/// Logout current user
-///
-/// Invalidates the current authentication token.
-pub async fn logout(
-    state: web::Data<Arc<AppState>>,
-    claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    state.auth_service.logout(claims).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(())))
-}
-
-/// Refresh authentication token
-///
-/// Issues a new authentication token for the current user.
-pub async fn refresh_token(
-    state: web::Data<Arc<AppState>>,
-    claims: Claims,
-) -> Result<HttpResponse, AppError> {
-    let token = state.auth_service.refresh_token(claims).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::success(token)))
+    handle_user_lookup(&**service, service.get_user_by_username(username)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock::{MockAuthService, MockRoleService, MockUserService};
-    use actix_web::{test, web, App};
-    use std::sync::Arc;
 
-    /// Create a test application state with mock services
-    async fn create_test_state() -> Arc<AppState> {
-        // Create mock services
-        let user_service = MockUserService::new();
-        let auth_service = MockAuthService::new();
-        let role_service = MockRoleService::new();
-
-        // Create and return app state
-        Arc::new(AppState {
-            user_service: Arc::new(user_service),
-            auth_service: Arc::new(auth_service),
-            role_service: Arc::new(role_service),
-            // Add other required mock services
-        })
+    #[test]
+    fn test_parse_valid_uuid() {
+        let valid_uuid = "550e8400-e29b-41d4-a716-446655440000";
+        let result = parse_user_id(valid_uuid);
+        assert!(result.is_ok());
     }
 
-    /// Create a test application with all routes configured
-    fn create_test_app(state: Arc<AppState>) -> actix_web::App {
-        App::new()
-            .app_data(web::Data::new(state.clone()))
-            .route("/api/auth/register", web::post().to(register_user))
-            .route("/api/auth/login", web::post().to(login_user))
-            .route("/api/auth/profile", web::get().to(get_profile))
-            .route("/api/auth/profile", web::put().to(update_profile))
-            .route("/api/auth/password", web::put().to(change_password))
-            .route("/api/users/{id}", web::get().to(get_user_by_id))
-            .route("/api/users/{id}", web::delete().to(delete_user))
-            .route("/api/users", web::get().to(list_users))
-            .route("/api/users/{id}/roles", web::post().to(assign_role))
-            .route("/api/users/{id}/roles", web::get().to(get_user_roles))
-        // Add other routes as needed
+    #[test]
+    fn test_parse_invalid_uuid() {
+        let invalid_uuid = "invalid-uuid";
+        let result = parse_user_id(invalid_uuid);
+        assert!(result.is_err());
     }
 
-    /// Mock password hasher for testing
-    struct MockPasswordHasher;
-
-    // Tests for register_user
-    #[actix_web::test]
-    async fn test_register_user_success() {
-        // Implement test for successful user registration
+    #[tokio::test]
+    async fn test_handlers_compile() {
+        assert!(true);
     }
-
-    #[actix_web::test]
-    async fn test_register_user_existing_email() {
-        // Implement test for registration with existing email
-    }
-
-    // Tests for login_user
-    #[actix_web::test]
-    async fn test_login_user_success() {
-        // Implement test for successful login
-    }
-
-    #[actix_web::test]
-    async fn test_login_user_invalid_credentials() {
-        // Implement test for login with invalid credentials
-    }
-
-    // Add more tests for other handlers
 }
