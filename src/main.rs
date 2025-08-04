@@ -2,6 +2,7 @@
 //! Production-ready mock implementation without complex dependencies
 
 mod simple_health;
+mod sqlx;
 
 use crate::simple_health::{database_test_only, simple_health_with_db};
 use actix_web::{web, App, HttpResponse, HttpServer, Result};
