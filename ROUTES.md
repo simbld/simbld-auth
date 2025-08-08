@@ -44,13 +44,13 @@ curl http://localhost:3000/health/detailed
 # 2. Test auth (register)
 
 curl -X POST http://localhost:3000/api/v1/auth/register \
--H "Content-Type: application/json" \
+-H "Content-Type: app/json" \
 -d '{"email":"test@example.com","username":"testuser","password":"SecurePass123!"}'
 
 # 3. Test auth (login)
 
 curl -X POST http://localhost:3000/api/v1/auth/login \
--H "Content-Type: application/json" \
+-H "Content-Type: app/json" \
 -d '{"email":"test@example.com","password":"SecurePass123!"}'
 
 # 4. Test user management
