@@ -1,14 +1,14 @@
 ### =============================================================================
-### API MOCK SERVER - COMPLETE TEST SUITE
-### Server: http://localhost:3000
+### 🏭 REAL SERVER
+### Server: http://localhost:3000 (Real Server with PostgreSQL)
 ### =============================================================================
 
 ### =============================================================================
 ### 🏥 HEALTH & SYSTEM
 ### =============================================================================
 
-### Test 1: Health Check
-GET http://localhost:3000/api/v1/health
+### Health Check - Real
+GET http://localhost:3000/health
 
 ### =============================================================================
 ### 🔐 AUTHENTICATION
@@ -190,10 +190,7 @@ Content-Type: application/json
 ### 🎯 QUICK TESTS - ESSENTIALS
 ### =============================================================================
 
-### Quick Test 1: Health Check
-GET http://localhost:3000/api/v1/health
-
-### Quick Test 2: Login
+### Login
 POST http://localhost:3000/api/v1/auth/login
 Content-Type: application/json
 
@@ -202,11 +199,11 @@ Content-Type: application/json
   "password": "SecurePassword123!"
 }
 
-### Quick Test 3: Protected Route
+### Protected Route
 GET http://localhost:3000/api/v1/protected
 Authorization: mock_access_token_12345
 
-### Quick Test 4: ⭐ Change Password (MAIN TARGET)
+### Change Password (MAIN TARGET)
 PUT http://localhost:3000/api/v1/users/mock-user-123/password
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -248,16 +245,7 @@ Content-Type: application/json
 ### 🔥 STRESS TESTING
 ### =============================================================================
 
-### Stress Test 1: Multiple Rapid Requests
-GET http://localhost:3000/api/v1/health
-
-###
-GET http://localhost:3000/api/v1/health
-
-###
-GET http://localhost:3000/api/v1/health
-
-### Stress Test 2: Large Payload
+### Stress Test: Large Payload
 PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/profile
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -356,36 +344,34 @@ GET http://localhost:3000/api/v1/users/real/550e8400-e29b-41d4-a716-446655440000
 Authorization: mock_access_token_12345
 
 ### =============================================================================
-### 🏥 SIMPLE HEALTH CHECKS (avec vraie connexion DB)
+### 🏭 REAL SERVER - READY
 ### =============================================================================
 
-### Test Simple Health - Route principale avec test DB réel
-GET http://localhost:3000/simple-health
+### TODO: Register User - Real (when auth module ready)
+POST http://localhost:3000/api/v1/auth/register
+Content-Type: application/json
 
-### Test Simple Health - DB uniquement
-GET http://localhost:3000/simple-health/db-only
+{
+  "email": "real@example.com",
+  "username": "realuser",
+  "password": "RealPassword123!"
+}
 
-### Test Simple Health avec DATABASE_URL custom
-# @name healthWithCustomDB
-GET http://localhost:3000/simple-health
-# Note: Configure DATABASE_URL avant de lancer le serveur
+### TODO: Login User - Real (when auth module ready)
+POST http://localhost:3000/api/v1/auth/login
+Content-Type: application/json
 
-### Test Simple Health - Vérification des erreurs de connexion
-# Ce test montrera les vraies erreurs de connexion PostgreSQL
-GET http://localhost:3000/simple-health/db-only
+{
+  "email": "real@example.com",
+  "password": "RealPassword123!"
+}
 
-### =============================================================================
-### 🔄 COMPARAISON DES HEALTH CHECKS
-### =============================================================================
+### TODO: Change Password - Real (when user module ready)
+PUT http://localhost:3000/api/v1/users/{id}/password
+Authorization: Bearer real_token_here
+Content-Type: application/json
 
-### Health Check Standard (Mock)
-GET http://localhost:3000/health
-
-### Health Check Détaillé (Mock)
-GET http://localhost:3000/health/detailed
-
-### Simple Health Check (Vraie DB)
-GET http://localhost:3000/simple-health
-
-### Simple Health DB Test (Vraie DB)
-GET http://localhost:3000/simple-health/db-only
+{
+  "current_password": "RealPassword123!",
+  "new_password": "NewRealPassword123!"
+}
