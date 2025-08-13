@@ -1,20 +1,35 @@
 ### =============================================================================
-### 🏭 REAL SERVER
+### 🏭 REAL SERVER - OPTIMIZED TEST SUITE
 ### Server: http://localhost:3000 (Real Server with PostgreSQL)
 ### =============================================================================
 
 ### =============================================================================
-### 🏥 HEALTH & SYSTEM
+### 🏥 HEALTH & SYSTEM (Cleaned)
 ### =============================================================================
 
-### Health Check - Real
+### Basic Health Check
 GET http://localhost:3000/health
+
+### Detailed Health Check
+GET http://localhost:3000/health/detailed
+
+### Readiness Probe
+GET http://localhost:3000/health/ready
+
+### Liveness Probe
+GET http://localhost:3000/health/live
+
+### Simple Health with Real DB
+GET http://localhost:3000/simple-health
+
+### DB Connection Test Only
+GET http://localhost:3000/simple-health/db-only
 
 ### =============================================================================
 ### 🔐 AUTHENTICATION
 ### =============================================================================
 
-### Test 2: Register User
+### Register User
 POST http://localhost:3000/api/v1/auth/register
 Content-Type: application/json
 
@@ -26,7 +41,7 @@ Content-Type: application/json
   "lastname": "User"
 }
 
-### Test 3: Login User
+### Login User
 POST http://localhost:3000/api/v1/auth/login
 Content-Type: application/json
 
@@ -39,15 +54,15 @@ Content-Type: application/json
 ### 🔒 PROTECTED ROUTES
 ### =============================================================================
 
-### Test 4: Protected Main Route
+### Protected Main Route
 GET http://localhost:3000/api/v1/protected
 Authorization: mock_access_token_12345
 
-### Test 5: Protected Profile
+### Protected Profile
 GET http://localhost:3000/api/v1/protected/profile
 Authorization: mock_access_token_12345
 
-### Test 6: Protected Settings Update
+### Protected Settings Update
 PUT http://localhost:3000/api/v1/protected/settings
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -58,43 +73,39 @@ Content-Type: application/json
   "language": "fr"
 }
 
-### Test 7: Protected Orders
+### Protected Orders
 GET http://localhost:3000/api/v1/protected/orders
 Authorization: mock_access_token_12345
 
-### Test 8: Logout
+### Logout
 POST http://localhost:3000/api/v1/protected/logout
 Authorization: mock_access_token_12345
 
 ### =============================================================================
-### 👥 USER MANAGEMENT - COLLECTION OPERATIONS
+### 👥 USER MANAGEMENT
 ### =============================================================================
 
-### Test 9: List All Users
+### List All Users
 GET http://localhost:3000/api/v1/users
 Authorization: mock_access_token_12345
 
-### Test 10: User Statistics (Admin)
+### User Statistics (Admin)
 GET http://localhost:3000/api/v1/users/stats
 Authorization: mock_access_token_12345
 
-### Test 11: Find User by Email (Admin)
+### Find User by Email
 GET http://localhost:3000/api/v1/users/by-email?email=test@example.com
 Authorization: mock_access_token_12345
 
-### Test 12: Find User by Username (Admin)
+### Find User by Username
 GET http://localhost:3000/api/v1/users/by-username?username=testuser
 Authorization: mock_access_token_12345
 
-### =============================================================================
-### 👤 USER MANAGEMENT - INDIVIDUAL OPERATIONS
-### =============================================================================
-
-### Test 13: Get User by ID
+### Get User by ID
 GET http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000
 Authorization: mock_access_token_12345
 
-### Test 14: Update User Profile
+### Update User Profile
 PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/profile
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -106,7 +117,7 @@ Content-Type: application/json
   "bio": "Updated user biography"
 }
 
-### Test 15: ⭐ Change Password (THE MAIN ONE!)
+### ⭐ Change Password (MAIN TARGET)
 PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/password
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -116,7 +127,7 @@ Content-Type: application/json
   "new_password": "NouveauMot123!"
 }
 
-### Test 16: Update User Status (Admin)
+### Update User Status (Admin)
 PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/status
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -126,11 +137,11 @@ Content-Type: application/json
   "reason": "Policy violation"
 }
 
-### Test 17: Get User Roles
+### Get User Roles
 GET http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/roles
 Authorization: mock_access_token_12345
 
-### Test 18: Assign Role (Admin)
+### Assign Role (Admin)
 POST http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/roles
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -143,19 +154,19 @@ Content-Type: application/json
 ### 🧪 ERROR TESTING
 ### =============================================================================
 
-### Test 19: Invalid UUID Format
+### Invalid UUID Format
 GET http://localhost:3000/api/v1/users/invalid-uuid-format
 Authorization: mock_access_token_12345
 
-### Test 20: Missing Email Parameter
+### Missing Email Parameter
 GET http://localhost:3000/api/v1/users/by-email
 Authorization: mock_access_token_12345
 
-### Test 21: Missing Username Parameter
+### Missing Username Parameter
 GET http://localhost:3000/api/v1/users/by-username
 Authorization: mock_access_token_12345
 
-### Test 22: Invalid Password Change (Too Short)
+### Password Too Short (Validation Test)
 PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/password
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -165,7 +176,7 @@ Content-Type: application/json
   "new_password": "123"
 }
 
-### Test 23: Missing Password Fields
+### Missing Current Password
 PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/password
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -174,36 +185,36 @@ Content-Type: application/json
   "new_password": "NouveauMot123!"
 }
 
-### Test 24: No Authorization Header
+### No Authorization Header
 GET http://localhost:3000/api/v1/protected
 
-### Test 25: Invalid JSON Format
-POST http://localhost:3000/api/v1/auth/login
-Content-Type: application/json
-
-{
-  "email": "test@example.com",
-  "password": "invalid-json"
-}
-
 ### =============================================================================
-### 🎯 QUICK TESTS - ESSENTIALS
+### 🧪 REAL DATABASE DEBUG
 ### =============================================================================
 
-### Login
-POST http://localhost:3000/api/v1/auth/login
-Content-Type: application/json
-
-{
-  "email": "test@example.com",
-  "password": "SecurePassword123!"
-}
-
-### Protected Route
-GET http://localhost:3000/api/v1/protected
+### Test Real Database Connection
+GET http://localhost:3000/api/v1/debug/db-test
 Authorization: mock_access_token_12345
 
-### Change Password (MAIN TARGET)
+### Check Database Tables
+GET http://localhost:3000/api/v1/debug/db-tables
+Authorization: mock_access_token_12345
+
+### =============================================================================
+### 🎯 ALTERNATIVE USER IDs (for flexibility)
+### =============================================================================
+
+### Alternative Password Change - Simple ID
+PUT http://localhost:3000/api/v1/users/123/password
+Authorization: mock_access_token_12345
+Content-Type: application/json
+
+{
+  "current_password": "MotDePasse123!",
+  "new_password": "NouveauMot123!"
+}
+
+### Alternative Password Change - Mock User ID
 PUT http://localhost:3000/api/v1/users/mock-user-123/password
 Authorization: mock_access_token_12345
 Content-Type: application/json
@@ -211,167 +222,4 @@ Content-Type: application/json
 {
   "current_password": "MotDePasse123!",
   "new_password": "NouveauMot123!"
-}
-
-### =============================================================================
-### 💡 ALTERNATIVE USER IDs FOR TESTING
-### =============================================================================
-
-### Test with Alternative User ID 1
-GET http://localhost:3000/api/v1/users/mock-user-123
-Authorization: mock_access_token_12345
-
-### Test with Alternative User ID 2
-PUT http://localhost:3000/api/v1/users/test-user-456/password
-Authorization: mock_access_token_12345
-Content-Type: application/json
-
-{
-  "current_password": "MotDePasse123!",
-  "new_password": "NouveauMot123!"
-}
-
-### Test with Alternative User ID 3
-PUT http://localhost:3000/api/v1/users/user123/password
-Authorization: mock_access_token_12345
-Content-Type: application/json
-
-{
-  "current_password": "MotDePasse123!",
-  "new_password": "NouveauMot123!"
-}
-
-### =============================================================================
-### 🔥 STRESS TESTING
-### =============================================================================
-
-### Stress Test: Large Payload
-PUT http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000/profile
-Authorization: mock_access_token_12345
-Content-Type: application/json
-
-{
-  "firstname": "VeryLongFirstNameThatExceedsNormalLimits",
-  "lastname": "VeryLongLastNameThatExceedsNormalLimits",
-  "username": "verylongusernamethatexceedsnormallimits",
-  "bio": "This is a long biography that contains a lot of text to test how the system handles large payloads and whether it can process them correctly without any issues or performance degradation",
-  "metadata": {
-    "preferences": {
-      "theme": "dark",
-      "language": "fr",
-      "notifications": {
-        "email": true,
-        "push": false,
-        "sms": true
-      }
-    }
-  }
-}
-
-### =============================================================================
-### 📝 NOTES
-### =============================================================================
-# Server URL: http://localhost:3000
-# Default Authorization: mock_access_token_12345
-# Main Test: Change Password (Test 15 & Quick Test 4)
-#
-# To run all tests:
-# 1. Start server: cargo run
-# 2. Run tests in order: Health -> Auth -> Protected -> Users
-# 3. Focus on Test 15 for password change functionality
-#
-# Expected responses should be JSON with appropriate status codes
-### =============================================================================
-### 🗄️ DATABASE CONNECTION TESTING
-### =============================================================================
-
-### Test Real Database Health (from your health.rs)
-GET http://localhost:3000/health/detailed
-Authorization: mock_access_token_12345
-
-### Test Database Readiness
-GET http://localhost:3000/health/ready
-Authorization: mock_access_token_12345
-
-### Test Simple Health
-GET http://localhost:3000/health
-
-### Test Detailed Health (NEW!)
-GET http://localhost:3000/health/detailed
-
-### Test Readiness
-GET http://localhost:3000/health/ready
-
-### Test Liveness
-GET http://localhost:3000/health/live
-
-
-### =============================================================================
-### 🧪 REAL DATABASE OPERATIONS (IF CONNECTED)
-### =============================================================================
-
-### Test Real DB 1: Create Real User (would fail with mock)
-POST http://localhost:3000/api/v1/users/real
-Authorization: mock_access_token_12345
-Content-Type: application/json
-
-{
-  "email": "realuser@example.com",
-  "username": "realuser",
-  "password": "RealPassword123!",
-  "firstname": "Real",
-  "lastname": "User"
-}
-
-### Test Real DB 2: Query Database Directly
-GET http://localhost:3000/api/v1/debug/db-test
-Authorization: mock_access_token_12345
-
-### Test Real DB 3: Check Database Tables
-GET http://localhost:3000/api/v1/debug/db-tables
-Authorization: mock_access_token_12345
-
-### =============================================================================
-### 📊 MOCK VS REAL COMPARISON
-### =============================================================================
-
-### Mock Response (Current)
-GET http://localhost:3000/api/v1/users/550e8400-e29b-41d4-a716-446655440000
-Authorization: mock_access_token_12345
-
-### Real DB Response (Would be different)
-GET http://localhost:3000/api/v1/users/real/550e8400-e29b-41d4-a716-446655440000
-Authorization: mock_access_token_12345
-
-### =============================================================================
-### 🏭 REAL SERVER - READY
-### =============================================================================
-
-### TODO: Register User - Real (when auth module ready)
-POST http://localhost:3000/api/v1/auth/register
-Content-Type: application/json
-
-{
-  "email": "real@example.com",
-  "username": "realuser",
-  "password": "RealPassword123!"
-}
-
-### TODO: Login User - Real (when auth module ready)
-POST http://localhost:3000/api/v1/auth/login
-Content-Type: application/json
-
-{
-  "email": "real@example.com",
-  "password": "RealPassword123!"
-}
-
-### TODO: Change Password - Real (when user module ready)
-PUT http://localhost:3000/api/v1/users/{id}/password
-Authorization: Bearer real_token_here
-Content-Type: application/json
-
-{
-  "current_password": "RealPassword123!",
-  "new_password": "NewRealPassword123!"
 }
