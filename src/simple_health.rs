@@ -144,7 +144,7 @@ pub async fn database_test_only() -> Result<HttpResponse> {
 
     println!("🔍 Testing database connection: {}", db_connection.replace(":password@", ":***@"));
 
-    let db_status = if db_connection.starts_with("postgresql://") {
+    let db_status = if db_connection.starts_with("postgresql") {
         test_postgresql_connection(&db_connection).await
     } else {
         test_mock_database().await
