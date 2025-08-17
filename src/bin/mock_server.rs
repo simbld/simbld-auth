@@ -1,75 +1,31 @@
 //! Mock server for testing and development
 //! Uses only simulated responses, no real database
 
-use actix_web::{web, App, HttpResponse, HttpServer, Result as ActixResult};
+use actix_web::{web, App, HttpResponse, HttpServer};
 use serde_json::{json, Value};
-use simbld_auth::{database_test_only, simple_health_with_db};
+
+use simbld_auth::simple_health::{database_test_only, simple_health_with_db};
 
 /// Helper to create a standard JSON response
-fn ok_json(data: Value) -> ActixResult<HttpResponse> {
-    Ok(HttpResponse::Ok().json(data))
+fn ok_json(data: Value) -> HttpResponse {
+    HttpResponse::Ok().json(data)
 }
 
 /// Helper to create an error response
-fn bad_request_json(data: Value) -> ActixResult<HttpResponse> {
-    Ok(HttpResponse::BadRequest().json(data))
+fn bad_request_json(data: Value) -> HttpResponse {
+    HttpResponse::BadRequest().json(data)
 }
 
-/// Helper
-fn created_json(data: Value) -> ActixResult<HttpResponse> {
-    Ok(HttpResponse::Created().json(data))
+/// Helper to create a created response with JSON body
+fn created_json(data: Value) -> HttpResponse {
+    HttpResponse::Created().json(data)
 }
 
-/// Mock protected route handler - simulates authenticated endpoints
-async fn mock_protected() -> ActixResult<HttpResponse> {
-    ok_json(json!({
-        "message": "Protected route accessed successfully",
-        "user_id": "mock-user-123",
-        "authenticated": true
-    }))
-}
-
-/// List users endpoint - returns paginated user collection
-async fn mock_users() -> ActixResult<HttpResponse> {
-    ok_json(json!({
-        "users": [
-            {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "username": "testuser",
-                "email": "test@example.com",
-                "status": "active"
-            }
-        ],
-        "total": 1,
-        "limit": 50,
-        "offset": 0
-    }))
-}
-
-/// Get user by ID endpoint - returns detailed user information
-async fn mock_user_by_id(path: web::Path<String>) -> ActixResult<HttpResponse> {
-    let user_id = path.into_inner();
-    ok_json(json!({
-        "id": user_id,
-        "username": "testuser",
-        "email": "test@example.com",
-        "firstname": "Test",
-        "lastname": "User",
-        "display_name": "Test User",
-        "status": "active",
-        "email_verified": true,
-        "mfa_enabled": false,
-        "created_at": chrono::Utc::now().to_rfc3339(),
-        "updated_at": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
-/// User authentication endpoint - validates credentials and returns JWT tokens
-async fn mock_login(payload: web::Json<Value>) -> ActixResult<HttpResponse> {
+/// Login endpoint
+async fn mock_login(payload: web::Json<Value>) -> HttpResponse {
     let email = payload.get("email").and_then(|v| v.as_str());
     let password = payload.get("password").and_then(|v| v.as_str());
 
-    // Basic validation
     if email.is_none() || password.is_none() {
         return bad_request_json(json!({
             "error": "Invalid credentials",
@@ -91,17 +47,16 @@ async fn mock_login(payload: web::Json<Value>) -> ActixResult<HttpResponse> {
     }))
 }
 
-/// User registration endpoint - creates a new user account
-async fn mock_register(payload: web::Json<Value>) -> ActixResult<HttpResponse> {
+/// Register endpoint
+async fn mock_register(payload: web::Json<Value>) -> HttpResponse {
     let email = payload.get("email").and_then(|v| v.as_str());
     let username = payload.get("username").and_then(|v| v.as_str());
     let password = payload.get("password").and_then(|v| v.as_str());
 
-    // Validation
     if email.is_none() || username.is_none() || password.is_none() {
         return bad_request_json(json!({
-            "error": "Invalid credentials",
-            "message": "Email and password are required"
+            "error": "Validation failed",
+            "message": "Email, username, and password are required"
         }));
     }
 
@@ -115,16 +70,12 @@ async fn mock_register(payload: web::Json<Value>) -> ActixResult<HttpResponse> {
     }))
 }
 
-/// Change user password endpoint - validates and updates user credentials
-async fn mock_change_password(
-    path: web::Path<String>,
-    payload: web::Json<Value>,
-) -> ActixResult<HttpResponse> {
+/// Change password endpoint
+async fn mock_change_password(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
     let current_password = payload.get("current_password").and_then(|v| v.as_str());
     let new_password = payload.get("new_password").and_then(|v| v.as_str());
 
-    // Input validation
     if current_password.is_none() || new_password.is_none() {
         return bad_request_json(json!({
             "error": "Validation failed",
@@ -132,7 +83,7 @@ async fn mock_change_password(
         }));
     }
 
-    // Password strength validation (mock)
+    // Password strength validation
     if let Some(pwd) = new_password {
         if pwd.len() < 8 {
             return bad_request_json(json!({
@@ -149,8 +100,52 @@ async fn mock_change_password(
     }))
 }
 
+/// Mock protected route handler - simulates authenticated endpoints
+async fn mock_protected() -> HttpResponse {
+    ok_json(json!({
+        "message": "Protected route accessed successfully",
+        "user_id": "mock-user-123",
+        "authenticated": true
+    }))
+}
+
+/// List users endpoint - returns paginated user collection
+async fn mock_users() -> HttpResponse {
+    ok_json(json!({
+        "users": [
+            {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "username": "testuser",
+                "email": "test@example.com",
+                "status": "active"
+            }
+        ],
+        "total": 1,
+        "limit": 50,
+        "offset": 0
+    }))
+}
+
+/// Get user by ID endpoint - returns detailed user information
+async fn mock_user_by_id(path: web::Path<String>) -> HttpResponse {
+    let user_id = path.into_inner();
+    ok_json(json!({
+        "id": user_id,
+        "username": "testuser",
+        "email": "test@example.com",
+        "firstname": "Test",
+        "lastname": "User",
+        "display_name": "Test User",
+        "status": "active",
+        "email_verified": true,
+        "mfa_enabled": false,
+        "created_at": chrono::Utc::now().to_rfc3339(),
+        "updated_at": chrono::Utc::now().to_rfc3339()
+    }))
+}
+
 /// Health check endpoint - returns server status and metadata
-async fn health_check() -> ActixResult<HttpResponse> {
+async fn health_check() -> HttpResponse {
     ok_json(json!({
         "status": "healthy",
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -160,7 +155,7 @@ async fn health_check() -> ActixResult<HttpResponse> {
 }
 
 /// Simple detailed health check - mock version
-async fn simple_detailed_health() -> ActixResult<HttpResponse> {
+async fn simple_detailed_health() -> HttpResponse {
     ok_json(json!({
         "status": "healthy",
         "service": "API Mock Server",
@@ -191,7 +186,7 @@ async fn simple_detailed_health() -> ActixResult<HttpResponse> {
 }
 
 /// Readiness probe
-async fn readiness_probe() -> ActixResult<HttpResponse> {
+async fn readiness_probe() -> HttpResponse {
     ok_json(json!({
         "ready": true,
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -205,7 +200,7 @@ async fn readiness_probe() -> ActixResult<HttpResponse> {
 }
 
 /// Liveness probe
-async fn liveness_probe() -> ActixResult<HttpResponse> {
+async fn liveness_probe() -> HttpResponse {
     ok_json(json!({
         "alive": true,
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -215,10 +210,7 @@ async fn liveness_probe() -> ActixResult<HttpResponse> {
 }
 
 /// Update user profile endpoint - modifies user personal information
-async fn mock_update_profile(
-    path: web::Path<String>,
-    payload: web::Json<Value>,
-) -> ActixResult<HttpResponse> {
+async fn mock_update_profile(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
 
     ok_json(json!({
@@ -230,10 +222,7 @@ async fn mock_update_profile(
 }
 
 /// Update user status endpoint - admin-only user account management
-async fn mock_update_status(
-    path: web::Path<String>,
-    payload: web::Json<Value>,
-) -> ActixResult<HttpResponse> {
+async fn mock_update_status(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
     let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("active");
 
@@ -247,10 +236,7 @@ async fn mock_update_status(
 }
 
 /// Assign role endpoint - admin-only role management
-async fn mock_assign_role(
-    path: web::Path<String>,
-    payload: web::Json<Value>,
-) -> ActixResult<HttpResponse> {
+async fn mock_assign_role(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
     let role = payload.get("role").and_then(|v| v.as_str()).unwrap_or("user");
 
@@ -264,7 +250,7 @@ async fn mock_assign_role(
 }
 
 /// Get user roles endpoint - returns user permission set
-async fn mock_get_user_roles(path: web::Path<String>) -> ActixResult<HttpResponse> {
+async fn mock_get_user_roles(path: web::Path<String>) -> HttpResponse {
     let user_id = path.into_inner();
 
     ok_json(json!({
@@ -275,7 +261,7 @@ async fn mock_get_user_roles(path: web::Path<String>) -> ActixResult<HttpRespons
 }
 
 /// User statistics endpoint - admin-only analytics data
-async fn mock_user_stats() -> ActixResult<HttpResponse> {
+async fn mock_user_stats() -> HttpResponse {
     ok_json(json!({
         "total_users": 1547,
         "active_users": 1289,
@@ -289,7 +275,7 @@ async fn mock_user_stats() -> ActixResult<HttpResponse> {
 }
 
 /// Find a user by email endpoint - admin-only user lookup
-async fn mock_user_by_email(query: web::Query<Value>) -> ActixResult<HttpResponse> {
+async fn mock_user_by_email(query: web::Query<Value>) -> HttpResponse {
     let email = query.get("email").and_then(|v| v.as_str()).unwrap_or("unknown");
 
     if email == "unknown" {
@@ -311,7 +297,7 @@ async fn mock_user_by_email(query: web::Query<Value>) -> ActixResult<HttpRespons
 }
 
 /// Find user by username endpoint - admin-only user lookup
-async fn mock_user_by_username(query: web::Query<Value>) -> ActixResult<HttpResponse> {
+async fn mock_user_by_username(query: web::Query<Value>) -> HttpResponse {
     let username = query.get("username").and_then(|v| v.as_str()).unwrap_or("unknown");
 
     if username == "unknown" {
@@ -333,7 +319,7 @@ async fn mock_user_by_username(query: web::Query<Value>) -> ActixResult<HttpResp
 }
 
 /// Mock database connection test - simulates real DB connectivity
-async fn mock_db_test() -> ActixResult<HttpResponse> {
+async fn mock_db_test() -> HttpResponse {
     ok_json(json!({
         "database_status": "mocked",
         "connection": "simulated",
@@ -347,7 +333,7 @@ async fn mock_db_test() -> ActixResult<HttpResponse> {
 }
 
 /// Mock database tables info - simulates table listing
-async fn mock_db_tables() -> ActixResult<HttpResponse> {
+async fn mock_db_tables() -> HttpResponse {
     ok_json(json!({
         "tables": [
             {
