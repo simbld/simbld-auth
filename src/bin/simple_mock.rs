@@ -2,6 +2,8 @@
 
 use actix_web::{web, App, HttpServer};
 
+use simbld_auth::mock_handlers::{health_check, mock_change_password, mock_login, mock_register};
+
 /// Configure routes
 fn configure_simple_routes(cfg: &mut web::ServiceConfig) {
     cfg.route("/health", web::get().to(health_check))
