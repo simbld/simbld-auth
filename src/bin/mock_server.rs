@@ -4,6 +4,7 @@
 use actix_web::{web, App, HttpResponse, HttpServer};
 use serde_json::{json, Value};
 
+use simbld_auth::mock_handlers::{health_check, mock_change_password, mock_login, mock_register};
 use simbld_auth::simple_health::{database_test_only, simple_health_with_db};
 
 /// Helper to create a standard JSON response
@@ -19,85 +20,6 @@ fn bad_request_json(data: Value) -> HttpResponse {
 /// Helper to create a created response with JSON body
 fn created_json(data: Value) -> HttpResponse {
     HttpResponse::Created().json(data)
-}
-
-/// Login endpoint
-async fn mock_login(payload: web::Json<Value>) -> HttpResponse {
-    let email = payload.get("email").and_then(|v| v.as_str());
-    let password = payload.get("password").and_then(|v| v.as_str());
-
-    if email.is_none() || password.is_none() {
-        return bad_request_json(json!({
-            "error": "Invalid credentials",
-            "message": "Email and password are required"
-        }));
-    }
-
-    ok_json(json!({
-        "access_token": "mock_access_token_12345",
-        "refresh_token": "mock_refresh_token_67890",
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "user": {
-            "id": "550e8400-e29b-41d4-a716-446655440000",
-            "email": email.unwrap(),
-            "username": "testuser"
-        },
-        "login_timestamp": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
-/// Register endpoint
-async fn mock_register(payload: web::Json<Value>) -> HttpResponse {
-    let email = payload.get("email").and_then(|v| v.as_str());
-    let username = payload.get("username").and_then(|v| v.as_str());
-    let password = payload.get("password").and_then(|v| v.as_str());
-
-    if email.is_none() || username.is_none() || password.is_none() {
-        return bad_request_json(json!({
-            "error": "Validation failed",
-            "message": "Email, username, and password are required"
-        }));
-    }
-
-    created_json(json!({
-        "user_id": "550e8400-e29b-41d4-a716-446655440000",
-        "email": email.unwrap(),
-        "username": username.unwrap(),
-        "message": "User registered successfully",
-        "status": "pending_verification",
-        "created_at": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
-/// Change password endpoint
-async fn mock_change_password(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
-    let user_id = path.into_inner();
-    let current_password = payload.get("current_password").and_then(|v| v.as_str());
-    let new_password = payload.get("new_password").and_then(|v| v.as_str());
-
-    if current_password.is_none() || new_password.is_none() {
-        return bad_request_json(json!({
-            "error": "Validation failed",
-            "message": "Both current_password and new_password are required"
-        }));
-    }
-
-    // Password strength validation
-    if let Some(pwd) = new_password {
-        if pwd.len() < 8 {
-            return bad_request_json(json!({
-                "error": "Validation failed",
-                "message": "The new password must be at least 8 characters long"
-            }));
-        }
-    }
-
-    ok_json(json!({
-        "message": "Password changed successfully",
-        "user_id": user_id,
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
 }
 
 /// Mock protected route handler - simulates authenticated endpoints
@@ -141,16 +63,6 @@ async fn mock_user_by_id(path: web::Path<String>) -> HttpResponse {
         "mfa_enabled": false,
         "created_at": chrono::Utc::now().to_rfc3339(),
         "updated_at": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
-/// Health check endpoint - returns server status and metadata
-async fn health_check() -> HttpResponse {
-    ok_json(json!({
-        "status": "healthy",
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "version": "1.0.0",
-        "message": "API server is running"
     }))
 }
 
