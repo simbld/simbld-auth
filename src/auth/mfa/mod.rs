@@ -15,7 +15,7 @@ pub mod sms;
 pub mod totp;
 pub mod webauthn;
 
-use crate::auth::dto::MfaType;
+pub use crate::auth::dto::MfaType;
 pub use backup_codes::{BackupCodeError, BackupCodeService};
 pub use totp::{TotpError, TotpService};
 
@@ -260,7 +260,6 @@ impl MfaService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::mocks::mock_client::MockClient;
     use tokio_postgres::Row;
 
