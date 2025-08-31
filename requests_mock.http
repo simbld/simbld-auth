@@ -1,0 +1,80 @@
+### =============================================================================
+### 🔧 MOCK SERVER - TEST SUITE
+### Server: http://localhost:3001 (Mock Server)
+### =============================================================================
+
+### Health Check - Mock
+GET http://localhost:3001/health
+
+### Health Check Detailed - Mock
+GET http://localhost:3001/health/detailed
+
+### Simple Health with Mock DB
+GET http://localhost:3001/simple-health
+
+### Simple Health DB Only - Mock
+GET http://localhost:3001/simple-health/db-only
+
+### =============================================================================
+### 🔐 AUTHENTICATION - MOCK
+### =============================================================================
+
+### Register User - Mock
+POST http://localhost:3001/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "username": "testuser",
+  "password": "SecurePassword123!"
+}
+
+### Login User - Mock
+POST http://localhost:3001/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "SecurePassword123!"
+}
+
+### =============================================================================
+### 👤 USER MANAGEMENT - MOCK
+### =============================================================================
+
+### ⭐ Change Password - MAIN TARGET (Mock)
+PUT http://localhost:3001/api/v1/users/550e8400-e29b-41d4-a716-446655440000/password
+Content-Type: application/json
+
+{
+  "current_password": "MotDePasse123!",
+  "new_password": "NouveauMot123!"
+}
+
+### Change Password - Short Password Test (Mock)
+PUT http://localhost:3001/api/v1/users/123/password
+Content-Type: application/json
+
+{
+  "current_password": "oldpass123",
+  "new_password": "short"
+}
+
+### Get User by ID - Mock
+GET http://localhost:3001/api/v1/users/550e8400-e29b-41d4-a716-446655440000
+
+### List All Users - Mock
+GET http://localhost:3001/api/v1/users
+
+### User Stats - Mock
+GET http://localhost:3001/api/v1/users/stats
+
+### =============================================================================
+### 🧪 DATABASE DEBUG - MOCK
+### =============================================================================
+
+### DB Test - Mock
+GET http://localhost:3001/api/v1/debug/db-test
+
+### DB Tables - Mock
+GET http://localhost:3001/api/v1/debug/db-tables

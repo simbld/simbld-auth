@@ -3,9 +3,18 @@ name = "simbld-auth"
 version = "0.1.0"
 edition = "2021"
 
+# Multiple binaries
 [[bin]]
-name = "simbld_auth"
+name = "main"
 path = "src/main.rs"
+
+[[bin]]
+name = "simple_mock"
+path = "src/bin/simple_mock.rs"
+
+[[bin]]
+name = "mock_server"
+path = "src/bin/mock_server.rs"
 
 [dependencies]
 actix-web = { version = "4.11.0", features = ["cookies"] }

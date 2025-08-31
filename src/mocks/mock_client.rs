@@ -1,12 +1,9 @@
+use sqlx::{Error, Row};
 use std::sync::{Arc, Mutex};
-use tokio_postgres::row::RowIter;
-use tokio_postgres::types::ToSql;
-use tokio_postgres::Transaction;
-use tokio_postgres::{Column, Error, Row, Statement, ToStatement, Type};
 
 #[derive(Clone)]
 pub struct MockClient {
-    query_opt_result: Arc<Mutex<Option<Option<Row>>>>,
+    query_opt_result: Arc<Mutex<Option<Option<dyn Row<Database = ()>>>>>,
     query_one_result: Arc<Mutex<Option<Row>>>,
     query_result: Arc<Mutex<Option<Vec<Row>>>>,
     execute_result: Arc<Mutex<u64>>,
@@ -59,7 +56,7 @@ impl MockClient {
     pub async fn query_opt(
         &self,
         _query: &str,
-        _params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+        _params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync)],
     ) -> Result<Option<Row>, Error> {
         if !self.sequential_clients.lock().unwrap().is_empty() {
             let current = *self.current_call.lock().unwrap();
@@ -73,14 +70,14 @@ impl MockClient {
 
         match *self.query_opt_result.lock().unwrap() {
             Some(ref result) => Ok(result.clone()),
-            None => panic!("MockClient::query_opt called but no result was configured"),
+            None => panic!("MockClient::query_opt called, but no result was configured"),
         }
     }
 
     pub async fn query_one(
         &self,
         _query: &str,
-        _params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+        _params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync)],
     ) -> Result<Row, Error> {
         if !self.sequential_clients.lock().unwrap().is_empty() {
             let current = *self.current_call.lock().unwrap();
@@ -101,7 +98,7 @@ impl MockClient {
     pub async fn query(
         &self,
         _query: &str,
-        _params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+        _params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync)],
     ) -> Result<Vec<Row>, Error> {
         if !self.sequential_clients.lock().unwrap().is_empty() {
             let current = *self.current_call.lock().unwrap();
@@ -122,7 +119,7 @@ impl MockClient {
     pub async fn execute(
         &self,
         _query: &str,
-        _params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+        _params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync)],
     ) -> Result<u64, Error> {
         if !self.sequential_clients.lock().unwrap().is_empty() {
             let current = *self.current_call.lock().unwrap();
@@ -137,31 +134,35 @@ impl MockClient {
         Ok(*self.execute_result.lock().unwrap())
     }
 
-    pub async fn execute_raw<T: ToStatement + Sync>(
+    pub async fn execute_raw(
         &self,
-        _statement: &T,
-        _params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+        _query: &str,
+        _params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync)],
     ) -> Result<u64, Error> {
         // Reuse the same logic as execute
         Ok(*self.execute_result.lock().unwrap())
     }
 
-    pub async fn prepare(&self, _query: &str) -> Result<Statement, Error> {
-        // Return a stub Statement
-        Ok(Statement::new("stub".to_string(), 0, vec![], vec![], None))
+    pub async fn prepare(&self, _query: &str) -> Result<sqlx::postgres::PgStatement<'_>, Error> {
+        // Return a stub Statement - note: this might need adjustment based on actual usage
+        panic!("prepare not fully implemented for mock")
     }
 
-    pub async fn prepare_typed(&self, _query: &str, _types: &[Type]) -> Result<Statement, Error> {
-        // Return a stub Statement
-        Ok(Statement::new("stub".to_string(), 0, vec![], vec![], None))
-    }
-
-    pub async fn query_raw<T: ToStatement + Sync>(
+    pub async fn prepare_typed(
         &self,
-        _statement: &T,
-        _params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+        _query: &str,
+        _types: &[sqlx::postgres::PgTypeInfo],
+    ) -> Result<sqlx::postgres::PgStatement<'_>, Error> {
+        // Return a stub Statement - note: this might need adjustment based on actual usage
+        panic!("prepare_typed not fully implemented for mock")
+    }
+
+    pub async fn query_raw(
+        &self,
+        _query: &str,
+        _params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync)],
     ) -> Result<Vec<Row>, Error> {
-        // Reuse the same logic as query
+        // Reuse the same logic as a query
         self.query("", &[]).await
     }
 
@@ -169,52 +170,33 @@ impl MockClient {
         *self.is_closed_value.lock().unwrap()
     }
 
-    pub async fn transaction(&self) -> Result<Transaction<'_>, Error> {
-        // This is a simplification as we can't actually create a real Transaction in a mock
-        panic!("Transaction not implemented in MockClient");
+    pub async fn begin(&self) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, Error> {
+        // This is a simplification as we can't create a real Transaction in a mock
+        panic!("Transaction is not implemented in MockClient");
     }
 
     pub async fn batch_execute(&self, _query: &str) -> Result<(), Error> {
-        // Simply return success
+        // Return success
         Ok(())
     }
 
     pub async fn simple_query(&self, _query: &str) -> Result<Vec<u8>, Error> {
-        // Return empty vector as a stub
+        // Return an empty vector as a stub
         Ok(vec![])
     }
 
-    // Helper function to create a mock Row
+    // Helper function to create a mock Row - Note: Creating rows manually is complex in sqlx
+    // This is a simplified version and might need adjustment based on an actual sqlx version
     pub fn create_mock_user_row(id: &str, provider_name: String, provider_user_id: &str) -> Row {
-        let column_names = vec!["id", "provider_name", "provider_user_id"];
-        let column_types = vec![Type::TEXT, Type::TEXT, Type::TEXT];
-        let columns: Vec<Column> = column_names
-            .iter()
-            .enumerate()
-            .map(|(i, name)| Column::new(name.to_string(), column_types[i].clone()))
-            .collect();
-
-        let values: Vec<Box<dyn ToSql + Sync>> = vec![
-            Box::new(id.to_string()),
-            Box::new(provider),
-            Box::new(provider_user_id.to_string()),
-        ];
-
-        Row::new(columns, values)
+        // Note: Creating Row instances manually in sqlx is not straightforward
+        // You might need to use a different approach or actual database queries for testing
+        panic!("Creating mock rows manually is not supported in sqlx. Consider using a test database instead.")
     }
 
     pub fn create_mock_row_with_exists(exists: bool) -> Row {
-        let column_names = vec!["exists"];
-        let column_types = vec![Type::BOOL];
-        let columns: Vec<Column> = column_names
-            .iter()
-            .enumerate()
-            .map(|(i, name)| Column::new(name.to_string(), column_types[i].clone()))
-            .collect();
-
-        let values: Vec<Box<dyn ToSql + Sync>> = vec![Box::new(exists)];
-
-        Row::new(columns, values)
+        // Note: Creating Row instances manually in sqlx is not straightforward
+        // You might need to use a different approach or actual database queries for testing
+        panic!("Creating mock rows manually is not supported in sqlx. Consider using a test database instead.")
     }
 
     pub fn create_sequential_mock_client(clients: Vec<MockClient>) -> MockClient {
