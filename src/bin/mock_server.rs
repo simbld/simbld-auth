@@ -22,7 +22,77 @@ fn created_json(data: Value) -> HttpResponse {
     HttpResponse::Created().json(data)
 }
 
-/// Mock protected route handler - simulates authenticated endpoints
+/// Mock create resource endpoint
+async fn mock_create_resource(payload: web::Json<Value>) -> HttpResponse {
+    created_json(json!({
+        "id": "new-resource-id-123",
+        "name": payload.get("name").and_then(|v| v.as_str()).unwrap_or("New Resource"),
+        "created_at": chrono::Utc::now().to_rfc3339(),
+        "status": "active"
+    }))
+}
+
+/// Update resource
+async fn mock_update_resource(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
+    let resource_id = path.into_inner();
+    ok_json(json!({
+        "id": resource_id,
+        "name": payload.get("name").and_then(|v| v.as_str()).unwrap_or("Updated Resource"),
+        "description": payload.get("description").and_then(|v| v.as_str()).unwrap_or("Updated description"),
+        "updated_at": chrono::Utc::now().to_rfc3339(),
+        "message": "Resource updated successfully"
+    }))
+}
+
+/// Delete resource
+async fn mock_delete_resource(path: web::Path<String>) -> HttpResponse {
+    let resource_id = path.into_inner();
+    ok_json(json!({
+        "success": true,
+        "message": "Resource deleted successfully",
+        "id": resource_id,
+        "deleted_at": chrono::Utc::now().to_rfc3339()
+    }))
+}
+
+/// List resources endpoint
+async fn mock_resources_list() -> HttpResponse {
+    ok_json(json!({
+        "resources": [
+            {
+                "id": "resource-001",
+                "name": "Resource One",
+                "type": "document",
+                "status": "active"
+            },
+            {
+                "id": "resource-002",
+                "name": "Resource Two",
+                "type": "image",
+                "status": "draft"
+            }
+        ],
+        "total": 2,
+        "limit": 50,
+        "offset": 0
+    }))
+}
+
+/// Get resource by ID
+async fn mock_get_resource(path: web::Path<String>) -> HttpResponse {
+    let resource_id = path.into_inner();
+    ok_json(json!({
+        "id": resource_id,
+        "name": "Example Resource",
+        "description": "This is a mock resource",
+        "type": "document",
+        "status": "active",
+        "created_at": chrono::Utc::now().to_rfc3339(),
+        "updated_at": chrono::Utc::now().to_rfc3339()
+    }))
+}
+
+/// Mock protected route handler–simulates authenticated endpoints
 async fn mock_protected() -> HttpResponse {
     ok_json(json!({
         "message": "Protected route accessed successfully",
@@ -31,7 +101,7 @@ async fn mock_protected() -> HttpResponse {
     }))
 }
 
-/// List users endpoint - returns paginated user collection
+/// List users endpoint–returns paginated user collection
 async fn mock_users() -> HttpResponse {
     ok_json(json!({
         "users": [
@@ -48,7 +118,7 @@ async fn mock_users() -> HttpResponse {
     }))
 }
 
-/// Get user by ID endpoint - returns detailed user information
+/// Get user by ID endpoint–returns detailed user information
 async fn mock_user_by_id(path: web::Path<String>) -> HttpResponse {
     let user_id = path.into_inner();
     ok_json(json!({
@@ -66,7 +136,7 @@ async fn mock_user_by_id(path: web::Path<String>) -> HttpResponse {
     }))
 }
 
-/// Simple detailed health check - mock version
+/// Simple detailed health check–mock version
 async fn simple_detailed_health() -> HttpResponse {
     ok_json(json!({
         "status": "healthy",
@@ -75,7 +145,7 @@ async fn simple_detailed_health() -> HttpResponse {
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "database": {
             "status": "mocked",
-            "message": "No real database connected - using mock responses",
+            "message": "No real database connected–using mock responses",
             "postgresql_available": false,
             "connection_string": "NOT_CONFIGURED",
             "response_time_ms": null
@@ -121,7 +191,7 @@ async fn liveness_probe() -> HttpResponse {
     }))
 }
 
-/// Update user profile endpoint - modifies user personal information
+/// Update user profile endpoint–modifies user personal information
 async fn mock_update_profile(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
 
@@ -133,7 +203,7 @@ async fn mock_update_profile(path: web::Path<String>, payload: web::Json<Value>)
     }))
 }
 
-/// Update user status endpoint - admin-only user account management
+/// Update user status endpoint–admin-only user account management
 async fn mock_update_status(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
     let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("active");
@@ -147,7 +217,7 @@ async fn mock_update_status(path: web::Path<String>, payload: web::Json<Value>) 
     }))
 }
 
-/// Assign role endpoint - admin-only role management
+/// Assign role endpoint–admin-only role management
 async fn mock_assign_role(path: web::Path<String>, payload: web::Json<Value>) -> HttpResponse {
     let user_id = path.into_inner();
     let role = payload.get("role").and_then(|v| v.as_str()).unwrap_or("user");
@@ -161,7 +231,7 @@ async fn mock_assign_role(path: web::Path<String>, payload: web::Json<Value>) ->
     }))
 }
 
-/// Get user roles endpoint - returns user permission set
+/// Get user roles endpoint–returns user permission set
 async fn mock_get_user_roles(path: web::Path<String>) -> HttpResponse {
     let user_id = path.into_inner();
 
@@ -172,7 +242,7 @@ async fn mock_get_user_roles(path: web::Path<String>) -> HttpResponse {
     }))
 }
 
-/// User statistics endpoint - admin-only analytics data
+/// User statistics endpoint–admin-only analytics data
 async fn mock_user_stats() -> HttpResponse {
     ok_json(json!({
         "total_users": 1547,
@@ -186,7 +256,7 @@ async fn mock_user_stats() -> HttpResponse {
     }))
 }
 
-/// Find a user by email endpoint - admin-only user lookup
+/// Find a user by email endpoint–admin-only user lookup
 async fn mock_user_by_email(query: web::Query<Value>) -> HttpResponse {
     let email = query.get("email").and_then(|v| v.as_str()).unwrap_or("unknown");
 
@@ -208,7 +278,7 @@ async fn mock_user_by_email(query: web::Query<Value>) -> HttpResponse {
     }))
 }
 
-/// Find user by username endpoint - admin-only user lookup
+/// Find user by username endpoint–admin-only user lookup
 async fn mock_user_by_username(query: web::Query<Value>) -> HttpResponse {
     let username = query.get("username").and_then(|v| v.as_str()).unwrap_or("unknown");
 
@@ -230,7 +300,7 @@ async fn mock_user_by_username(query: web::Query<Value>) -> HttpResponse {
     }))
 }
 
-/// Mock database connection test - simulates real DB connectivity
+/// Mock database connection test–simulates real DB connectivity
 async fn mock_db_test() -> HttpResponse {
     ok_json(json!({
         "database_status": "mocked",
@@ -244,7 +314,7 @@ async fn mock_db_test() -> HttpResponse {
     }))
 }
 
-/// Mock database tables info - simulates table listing
+/// Mock database tables information–simulates table listing
 async fn mock_db_tables() -> HttpResponse {
     ok_json(json!({
         "tables": [
@@ -275,6 +345,15 @@ async fn mock_db_tables() -> HttpResponse {
 /// Configure all mock routes
 fn configure_mock_routes(cfg: &mut web::ServiceConfig) {
     cfg
+        // Add new routes
+        .service(
+            web::scope("/api/v1/resources")
+                .route("", web::get().to(mock_resources_list))
+                .route("", web::post().to(mock_create_resource))
+                .route("/{id}", web::get().to(mock_get_resource))
+                .route("/{id}", web::put().to(mock_update_resource))
+                .route("/{id}", web::delete().to(mock_delete_resource)),
+        )
         // Health routes with mock mode
         .service(
             web::scope("/simple-health")
@@ -286,13 +365,13 @@ fn configure_mock_routes(cfg: &mut web::ServiceConfig) {
         .route("/health/detailed", web::get().to(simple_detailed_health))
         .route("/health/ready", web::get().to(readiness_probe))
         .route("/health/live", web::get().to(liveness_probe))
-        // Authentication routes - MOCK
+        // Authentication routes–MOCK
         .service(
             web::scope("/api/v1/auth")
                 .route("/login", web::post().to(mock_login))
                 .route("/register", web::post().to(mock_register)),
         )
-        // Protected routes - MOCK
+        // Protected routes–MOCK
         .service(
             web::scope("/api/v1/protected")
                 .route("", web::get().to(mock_protected))
@@ -301,7 +380,7 @@ fn configure_mock_routes(cfg: &mut web::ServiceConfig) {
                 .route("/orders", web::get().to(mock_protected))
                 .route("/logout", web::post().to(mock_protected)),
         )
-        // User management routes - MOCK
+        // User management routes–MOCK
         .service(
             web::scope("/api/v1/users")
                 .route("", web::get().to(mock_users))
@@ -315,7 +394,7 @@ fn configure_mock_routes(cfg: &mut web::ServiceConfig) {
                 .route("/{id}/roles", web::post().to(mock_assign_role))
                 .route("/{id}/roles", web::get().to(mock_get_user_roles)),
         )
-        // Debug routes - MOCK
+        // Debug routes–MOCK
         .service(
             web::scope("/api/v1/debug")
                 .route("/db-test", web::get().to(mock_db_test))
@@ -357,11 +436,17 @@ async fn main() -> std::io::Result<()> {
     println!("│GET/api/v1/users/stats");
     println!("│GET/api/v1/users/by-email");
     println!("│GET/api/v1/users/by-username");
+    println!("├─ Resources");
+    println!("│GET/api/v1/resources ⭐ WORKING.");
+    println!("│POST/api/v1/resources NEW. Returns 201 Created");
+    println!("│GET/api/v1/resources/{{id}} ⭐ WORKING.");
+    println!("│PUT/api/v1/resources/{{id}} ⭐ WORKING.");
+    println!("│DELETE/api/v1/resources/{{id}} ⭐ WORKING.");
     println!("└─ Database Debug");
     println!("GET/api/v1/debug/db-test ⭐ NEW!");
     println!("GET/api/v1/debug/db-tables ⭐ NEW!");
     println!("\n All endpoints are mocked for testing purposes");
-    println!("Database: MOCKED - No real PostgreSQL connection");
+    println!("Database: MOCKED–No real PostgreSQL connection");
     println!("Use debug endpoints to simulate DB connectivity checks");
 
     HttpServer::new(|| App::new().configure(configure_mock_routes))
