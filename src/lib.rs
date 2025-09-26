@@ -8,11 +8,12 @@ pub mod health;
 pub mod mocks;
 pub mod protected;*/
 pub mod mock_handlers;
-pub mod simple_health; // ✅ AJOUTE CETTE LIGNE
-                       /*pub mod sqlx;
-                       pub mod types;
-                       pub mod user;
-                       pub mod utils;*/
+pub mod simple_health;
+pub mod user;
+
+/*pub mod sqlx;
+pub mod types;
+pub mod utils;*/
 
 // Re-export commonly used types and functions
 pub use simple_health::{database_test_only, simple_health_with_db};
