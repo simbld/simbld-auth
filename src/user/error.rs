@@ -141,25 +141,6 @@ impl From<validator::ValidationErrors> for UserError {
     }
 }
 
-impl fmt::Display for UserError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            UserError::UserNotFound => write!(f, "User not found"),
-            UserError::UsernameTaken => write!(f, "Username already took"),
-            UserError::EmailTaken => write!(f, "Email already in use"),
-            UserError::InvalidRole(role) => write!(f, "Invalid role: {}", role),
-            UserError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
-            UserError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
-            UserError::CurrentPasswordIncorrect => write!(f, "The current password is incorrect"),
-            UserError::DatabaseError(msg) => write!(f, "Database error: {}", msg),
-            UserError::InternalError(msg) => write!(f, "Internal error: {}", msg),
-            UserError::ServerError(msg) => write!(f, "Server error: {}", msg),
-            UserError::DbConnectionError(msg) => write!(f, "Database connection error: {}", msg),
-            UserError::EmailExists => write!(f, "Email already exists"),
-            UserError::RateLimitExceeded => write!(f, "Rate limit exceeded"),
-        }
-    }
-}
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
