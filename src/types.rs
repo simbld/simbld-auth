@@ -19,55 +19,26 @@ pub enum StartupError {
 }
 
 /// Runtime API errors
-#[derive(Debug, Error, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ApiError {
-    #[error("Internal server error: {message}")]
     Internal {
         message: String,
     },
-
-    #[error("Database error: {0}")]
     Database(String),
-
-    #[error("Authentication error: {0}")]
     Auth(String),
-
-    #[error("Configuration error: {message}")]
     Config {
         message: String,
     },
-
-    #[error("Validation error: {0}")]
     Validation(String),
-
-    #[error("Password error: {0}")]
     Password(String),
-
-    #[error("User not found")]
     UserNotFound,
-
-    #[error("Email already exists")]
     EmailAlreadyExists,
-
-    #[error("Invalid credentials")]
     InvalidCredentials,
-
-    #[error("MFA error: {0}")]
     Mfa(String),
-
-    #[error("JWT error: {0}")]
     Jwt(String),
-
-    #[error("Rate limit exceeded")]
     RateLimit,
-
-    #[error("Permission denied")]
     PermissionDenied,
-
-    #[error("Account locked")]
     AccountLocked,
-
-    #[error("Session expired")]
     SessionExpired,
 }
 
