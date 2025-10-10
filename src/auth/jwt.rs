@@ -1,7 +1,7 @@
 //! JWT token management
 //!
 //! Handles creation, validation, and parsing of JWT tokens for authentication
-//! and authorization purposes.
+//! and authorisation purposes.
 
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -67,7 +67,7 @@ impl Clone for JwtService {
     fn clone(&self) -> Self {
         // EncodingKey et DecodingKey ne sont pas Clone, on doit les recréer
         // On ne peut pas cloner les clés directement, donc on retourne une erreur pour l’instant
-        panic!("JwtService can't be cloned - keys must be recreated with new()")
+        panic!("JwtService can't be cloned–keys must be recreated with new()")
     }
 }
 
