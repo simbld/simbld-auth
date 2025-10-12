@@ -14,6 +14,8 @@ pub mod user;
 pub mod utils;
 // pub mod mock_handlers
 
+pub use types::ApiError;
+
 // Re-export commonly used types and functions
 pub use simple_health::{database_test_only, simple_health_with_db};
 
