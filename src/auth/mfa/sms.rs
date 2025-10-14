@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-use crate::auth::mfa::MfaMethod;
-use crate::config::AppConfig;
-use crate::errors::ApiError;
+use crate::types::{ApiError, AppConfig};
 
 /// Provider for SMS-based MFA
 #[derive(Debug, Clone)]

@@ -6,12 +6,9 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-use crate::auth::mfa::MfaMethod;
-use crate::config::AppConfig;
-use crate::errors::ApiError;
+use crate::types::{ApiError, AppConfig};
 
 /// Provider for push notification-based MFA
 #[derive(Debug, Clone)]

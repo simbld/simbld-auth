@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use webauthn_rs::{error::WebauthnError, prelude::*};
 
-use crate::auth::mfa::MfaMethod;
-use crate::config::AppConfig;
-use crate::errors::ApiError;
+use crate::types::{ApiError, AppConfig};
 
 /// Provider for WebAuthn-based MFA
 #[derive(Clone)]
