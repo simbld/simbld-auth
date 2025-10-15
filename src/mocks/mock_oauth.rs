@@ -1,6 +1,6 @@
-use crate::auth::jwt::JwtManager;
+use crate::auth::jwt::JwtService;
 use crate::auth::oauth::{OAuthProvider, OAuthService};
-use crate::config::AppConfig;
+use crate::types::AppConfig;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -16,7 +16,7 @@ pub struct MockUserInfoResponse {
 pub struct MockOAuthService {
     pub authorize_responses: Arc<RwLock<HashMap<OAuthProvider, Result<String, String>>>>,
     pub user_info_responses: Arc<RwLock<HashMap<String, MockUserInfoResponse>>>,
-    pub jwt_manager: JwtManager,
+    pub jwt_manager: JwtService,
 }
 
 impl MockOAuthService {
@@ -24,7 +24,7 @@ impl MockOAuthService {
         MockOAuthService {
             authorize_responses: Arc::new(RwLock::new(HashMap::new())),
             user_info_responses: Arc::new(RwLock::new(HashMap::new())),
-            jwt_manager: JwtManager::new("test_secret", 60 * 24 * 7), // 7 days
+            jwt_manager: JwtService::new("test_secret", 60 * 24 * 7), // 7 days
         }
     }
 
@@ -55,7 +55,7 @@ impl MockOAuthService {
             ..Default::default()
         };
 
-        let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7); // 7 days
+        let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7); // 7 days
         OAuthService::new(&app_config, jwt_manager)
     }
 }
