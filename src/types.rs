@@ -52,6 +52,15 @@ pub struct AppConfig {
     pub cors_origins: Vec<String>,
     pub rate_limit: usize,
     pub log_level: String,
+    pub base_url: String,
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub github_client_id: Option<String>,
+    pub github_client_secret: Option<String>,
+    pub facebook_client_id: Option<String>,
+    pub facebook_client_secret: Option<String>,
+    pub microsoft_client_id: Option<String>,
+    pub microsoft_client_secret: Option<String>,
 }
 
 /// Server configuration
@@ -115,6 +124,15 @@ impl Default for AppConfig {
             cors_origins: vec!["*".to_string()],
             rate_limit: 100,
             log_level: "info".to_string(),
+            base_url: "http://localhost:8080".to_string(),
+            google_client_id: None,
+            google_client_secret: None,
+            github_client_id: None,
+            github_client_secret: None,
+            facebook_client_id: None,
+            facebook_client_secret: None,
+            microsoft_client_id: None,
+            microsoft_client_secret: None,
         }
     }
 }
