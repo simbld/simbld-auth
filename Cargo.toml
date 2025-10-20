@@ -23,7 +23,7 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "uui
 thiserror = "2.0.12"
 dotenvy = "0.15.7"
 argon2 = "0.5.3"
-jsonwebtoken = { version = "10.1.0", default-features = true }
+jsonwebtoken = "10.1.0"
 chrono = { version = "0.4.39", features = ["serde"] }
 # tokio-postgres = { version = "0.7.12", features = ["with-uuid-0_8"] }
 # deadpool-postgres = "0.14.1"
