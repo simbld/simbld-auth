@@ -8,8 +8,14 @@ use crate::utils::response_handler::ResponseHandler;
 use actix_web::{HttpRequest, HttpResponse};
 use simbld_http::responses::ResponsesTypes;
 use simbld_http::ResponsesServerCodes;
+use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::time::Duration;
+
+///  Get a PostgreSQL connection pool
+pub async fn get_pg_pool(config: &str) -> Result<sqlx::PgPool, sqlx::Error> {
+    PgPoolOptions::new().max_connections(5).connect(config).await
+}
 
 /// Load complete app configuration
 pub fn load_config() -> Result<AppConfig, ApiError> {
