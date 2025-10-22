@@ -27,6 +27,17 @@ pub fn load_config() -> Result<AppConfig, ApiError> {
         cors_origins: load_cors_origins(),
         rate_limit: load_rate_limit(),
         log_level: load_log_level(),
+
+        // ✅ Initialise les champs manquants
+        base_url: env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+        google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
+        google_client_secret: env::var("GOOGLE_CLIENT_SECRET").ok(),
+        github_client_id: env::var("GITHUB_CLIENT_ID").ok(),
+        github_client_secret: env::var("GITHUB_CLIENT_SECRET").ok(),
+        facebook_client_id: env::var("FACEBOOK_CLIENT_ID").ok(),
+        facebook_client_secret: env::var("FACEBOOK_CLIENT_SECRET").ok(),
+        microsoft_client_id: env::var("MICROSOFT_CLIENT_ID").ok(),
+        microsoft_client_secret: env::var("MICROSOFT_CLIENT_SECRET").ok(),
     };
 
     validate_config(&config)?;
