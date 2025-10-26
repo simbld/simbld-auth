@@ -256,6 +256,15 @@ mod tests {
             cors_origins: vec!["*".to_string()],
             rate_limit: 100,
             log_level: "info".to_string(),
+            base_url: "http://localhost:8080".to_string(),
+            google_client_id: Some("google_client_id".to_string()),
+            google_client_secret: Some("google_client_secret".to_string()),
+            github_client_id: Some("github_client_id".to_string()),
+            github_client_secret: Some("github_client_secret".to_string()),
+            facebook_client_id: Some("facebook_client_id".to_string()),
+            facebook_client_secret: Some("facebook_client_secret".to_string()),
+            microsoft_client_id: Some("microsoft_client_id".to_string()),
+            microsoft_client_secret: Some("microsoft_client_secret".to_string()),
         };
 
         let result = validate_config(&config);
