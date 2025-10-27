@@ -999,7 +999,7 @@ pub mod routes {
 
         // Test for OAuthProvider display formatting
         #[test]
-        fn test_oauth_provider_display() {
+        async fn test_oauth_provider_display() {
             assert_eq!(OAuthProvider::Google.to_string(), "google");
             assert_eq!(OAuthProvider::GitHub.to_string(), "github");
             assert_eq!(OAuthProvider::Facebook.to_string(), "facebook");
@@ -1008,7 +1008,7 @@ pub mod routes {
 
         // Test for OAuthProvider from string conversion
         #[test]
-        fn test_oauth_provider_from_str() {
+        async fn test_oauth_provider_from_str() {
             assert_eq!(OAuthProvider::from("google"), OAuthProvider::Google);
             assert_eq!(OAuthProvider::from("GOOGLE"), OAuthProvider::Google);
             assert_eq!(OAuthProvider::from("github"), OAuthProvider::GitHub);
@@ -1019,7 +1019,7 @@ pub mod routes {
 
         // Test for OAuthState serialization and deserialization
         #[test]
-        fn test_oauth_state_serialization() {
+        async fn test_oauth_state_serialization() {
             let state = OAuthState {
                 csrf_token: "abc123".to_string(),
                 redirect_uri: "https://example.com/callback".to_string(),
@@ -1034,7 +1034,7 @@ pub mod routes {
 
         // Test for OAuthUserInfo serialization and deserialization
         #[test]
-        fn test_oauth_user_info_serialization() {
+        async fn test_oauth_user_info_serialization() {
             let user_info = OAuthUserInfo {
                 provider_user_id: "12345".to_string(),
                 provider: OAuthProvider::Google,
