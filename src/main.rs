@@ -5,6 +5,7 @@ mod simple_health;
 use crate::simple_health::{database_test_only, simple_health_with_db};
 use actix_web::{web, App, HttpResponse, HttpServer, Result};
 use serde_json::json;
+use std::env;
 
 /// Health check endpoint
 async fn health_check() -> Result<HttpResponse> {
@@ -36,6 +37,8 @@ fn configure_real_routes(cfg: &mut web::ServiceConfig) {
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env");
+    println!("Connecting to a database: {}", database_url);
 
     println!("Server started on http://localhost:3000");
     println!("Mode: PRODUCTION with PostgreSQL");
