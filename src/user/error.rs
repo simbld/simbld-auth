@@ -1,6 +1,5 @@
 //! User-related error types
 
-use crate::types::ApiError;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError};
 use serde::{Deserialize, Serialize};
@@ -14,6 +13,15 @@ pub struct ErrorResponse {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+}
+
+#[derive(Debug, Clone, Error)]
+pub enum ApiError {
+    #[error("Bad Request: {0}")]
+    BadRequest(String),
+
+    #[error("Internal Server Error: {0}")]
+    InternalServerError(String),
 }
 
 /// User-specific errors
