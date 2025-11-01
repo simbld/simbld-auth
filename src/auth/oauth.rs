@@ -1,8 +1,9 @@
 use crate::auth::jwt::JwtService;
 use crate::auth::session::SessionTokens;
-use crate::db::PgPool;
-use crate::models::user::User;
+use crate::sqlx::database::PgPool;
 use crate::types::{ApiError, AppConfig};
+use crate::user::models::User;
+
 use actix_web::{cookie::Cookie, http::header, web, HttpRequest, HttpResponse};
 use chrono::Utc;
 use oauth2::basic::BasicClient;
@@ -11,8 +12,8 @@ use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
     TokenResponse, TokenUrl,
 };
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::distr::Alphanumeric;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -73,19 +74,25 @@ pub struct OAuthService {
     db_client: Arc<dyn DbClient>,
 }
 
+#[async_trait::async_trait]
 pub trait OAuthClient: Send + Sync {
     async fn authorize_url(&self, redirect_uri: &str, state: &str) -> Result<String, OAuthError>;
     async fn exchange_code(&self, code: &str, redirect_uri: &str) -> Result<String, OAuthError>;
     async fn get_user_info(&self, access_token: &str) -> Result<OAuthUserInfo, OAuthError>;
 }
 
+#[async_trait::async_trait]
 pub trait DbClient: Send + Sync {
-    async fn query_opt<T: FromRow>(
+    async fn query_opt<T: Send + Sync>(
         &self,
         query: &str,
-        params: &[&(dyn ToSql + Sync)],
+        params: &[&(dyn sqlx::TypeSql + Send + Sync)],
     ) -> Result<Option<T>, Error>;
-    async fn execute(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error>;
+    async fn execute(
+        &self,
+        query: &str,
+        params: &[&(dyn sqlx::TypeSql + Send + Sync)],
+    ) -> Result<u64, Error>;
 }
 
 #[derive(Debug, thiserror::Error)]
