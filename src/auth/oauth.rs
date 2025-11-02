@@ -4,16 +4,14 @@ use crate::sqlx::database::PgPool;
 use crate::types::{ApiError, AppConfig};
 use crate::user::models::User;
 
-use actix_web::{cookie::Cookie, http::header, web, HttpRequest, HttpResponse};
+use actix_web::{cookie::Cookie, http::header, HttpRequest, HttpResponse};
 use chrono::Utc;
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::async_http_client;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
     TokenResponse, TokenUrl,
 };
-use rand::distr::Alphanumeric;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -200,7 +198,7 @@ impl OAuthService {
         // Generate a random state ID and CSRF token
         let state_id = Uuid::new_v4().to_string();
         let csrf_token: String =
-            thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
+            rand::rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
 
         // Store state in state store
         let state = OAuthState {
@@ -1001,7 +999,6 @@ pub mod routes {
         use actix_web::{http, test, web, App, HttpRequest, HttpResponse};
         use std::collections::HashMap;
         use std::sync::{Arc, RwLock};
-        use tokio_postgres::row::Row;
         use uuid::Uuid;
 
         // Test for OAuthProvider display formatting
