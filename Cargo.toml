@@ -19,25 +19,24 @@ path = "src/bin/mock_server.rs"
 [dependencies]
 actix-web = { version = "4.11.0", features = ["cookies"] }
 tokio = { version = "1.45.1", features = ["full"] }
+tokio-postgres = { version = "0.7.12", features = ["with-uuid-1", "with-chrono-0_4"] }
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 thiserror = "2.0.12"
 dotenvy = "0.15.7"
-argon2 = "0.5.3"
+argon2 = { version = "0.5.3", features = ["std"] }
 jsonwebtoken = { version = "10.1.0", default-features = false, features = ["aws_lc_rs"] }
 chrono = { version = "0.4.39", features = ["serde"] }
-# tokio-postgres = { version = "0.7.12", features = ["with-uuid-0_8"] }
-# deadpool-postgres = "0.14.1"
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = "1.0.133"
 regex = "1.11.1"
-rand = { version = "0.9.1", features = ["std_rng", "std"] }
+rand = { version = "0.9.1", features = ["std_rng", "std", "alloc"] }
 async-trait = "0.1.83"
 log = "0.4.22"
 futures-util = "0.3.31"
 env_logger = "0.11.6"
 simbld-http = "1.0.0"
-oauth2 = "5.0.0"
-reqwest = { version = "0.12.9", features = ["json"] }
+oauth2 = { version = "5.0.0", features = ["reqwest"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 sha1 = "0.10.6"
 hmac = "0.12.1"
 base32 = "0.5.1"
@@ -66,9 +65,6 @@ uuid = { version = "1.6.1", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
 lazy_static = "1.5.0"
 webauthn-rs = "0.5.2"
-# aws-config = "1.1"
-# aws-sdk-sesv2 = "1.15"
-# aws-sdk-sns = "1.14"
 
 
 
