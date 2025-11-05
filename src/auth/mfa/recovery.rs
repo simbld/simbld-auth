@@ -3,15 +3,12 @@
 //! This module provides recovery codes for when users lose access to their MFA devices.
 //! It generates, stores, and validates recovery codes.
 
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2, Config as Argon2Config, Variant,
-};
+use crate::types::{ApiError, AppConfig};
+use argon2::Argon2;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use uuid::Uuid;
 
 use crate::auth::mfa::totp::MfaMethod;
@@ -127,7 +124,7 @@ impl RecoveryCodeProvider {
 
     /// Generate a single recovery code
     fn generate_single_code(&self) -> String {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let chunk_size = if self.use_separators {
             4
         } else {
@@ -232,7 +229,7 @@ impl RecoveryCodeProvider {
 
     /// Hash a recovery code
     fn hash_code(&self, code: &str) -> Result<String, ApiError> {
-        let salt = rand::thread_rng().gen::<[u8; 32]>();
+        let salt = rand::rng().gen::<[u8; 32]>();
 
         argon2::hash_encoded(code.as_bytes(), &salt, &self.argon2_config)
             .map_err(|e| ApiError::new(500, format!("Failed to hash recovery code: {}", e)))
