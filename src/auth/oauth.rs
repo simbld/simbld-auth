@@ -1,8 +1,8 @@
 use crate::auth::jwt::JwtService;
 use crate::auth::session::SessionTokens;
-use crate::sqlx::database::PgPool;
 use crate::types::{ApiError, AppConfig};
 use crate::user::models::User;
+use sqlx::PgPool;
 
 use actix_web::{cookie::Cookie, http::header, HttpRequest, HttpResponse};
 use chrono::Utc;
@@ -84,12 +84,18 @@ pub trait DbClient: Send + Sync {
     async fn query_opt<T: Send + Sync>(
         &self,
         query: &str,
-        params: &[&(dyn sqlx::TypeSql + Send + Sync)],
+        params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres>
+                + sqlx::Type<sqlx::Postgres>
+                + Send
+                + Sync)],
     ) -> Result<Option<T>, Error>;
     async fn execute(
         &self,
         query: &str,
-        params: &[&(dyn sqlx::TypeSql + Send + Sync)],
+        params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres>
+                + sqlx::Type<sqlx::Postgres>
+                + Send
+                + Sync)],
     ) -> Result<u64, Error>;
 }
 
@@ -459,7 +465,7 @@ impl OAuthClient for GoogleOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -543,7 +549,7 @@ impl OAuthClient for GitHubOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -659,7 +665,7 @@ impl OAuthClient for FacebookOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -755,7 +761,7 @@ impl OAuthClient for MicrosoftOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
