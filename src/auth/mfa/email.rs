@@ -87,7 +87,7 @@ impl EmailMfaProvider {
 
     /// Generate a random verification code
     fn generate_code(&self) -> String {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut code = String::new();
 
         for _ in 0..self.code_length {
