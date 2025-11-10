@@ -2,9 +2,7 @@
 //! This module provides functionality for generating, verifying, and managing TOTP-based
 //! authentication, including backup codes generation and QR code generation for easy setup.
 
-pub(crate) use crate::auth::models::MfaType;
-use base32;
-use base32::data::Alphabet;
+use base32::Alphabet;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Utc};
 use futures_util::TryFutureExt;
@@ -94,8 +92,12 @@ impl TotpService {
         rng.fill_bytes(&mut bytes);
 
         // Encode the random bytes using base32 (standard for TOTP)
-        let config = base32::RFC4648.with_padding(false);
-        let secret = base32::encode(config, &bytes);
+        let secret = base32::encode(
+            Alphabet::Rfc4648 {
+                padding: false,
+            },
+            &bytes,
+        );
 
         Ok(secret)
     }
