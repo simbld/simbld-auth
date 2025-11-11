@@ -87,7 +87,7 @@ pub struct PushDevice {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceType {
     /// iOS device
-    iOS,
+    IOs,
 
     /// Android device
     Android,
@@ -459,7 +459,7 @@ impl PushClient for FcmPushClient {
     ) -> Result<(), ApiError> {
         // Build FCM payload
         let payload = match device.device_type {
-            DeviceType::iOS => {
+            DeviceType::IOs => {
                 serde_json::json!({
                     "to": device.token,
                     "notification": {
