@@ -15,12 +15,9 @@ pub struct ErrorResponse {
     pub code: Option<String>,
 }
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone)]
 pub enum ApiError {
-    #[error("Bad Request: {0}")]
     BadRequest(String),
-
-    #[error("Internal Server Error: {0}")]
     InternalServerError(String),
 }
 
