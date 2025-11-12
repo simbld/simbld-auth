@@ -3,7 +3,6 @@
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, ResponseError};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use thiserror::Error;
 
 /// Standard error response format
@@ -13,12 +12,6 @@ pub struct ErrorResponse {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ApiError {
-    BadRequest(String),
-    InternalServerError(String),
 }
 
 /// User-specific errors
@@ -143,31 +136,5 @@ impl From<validator::ValidationErrors> for UserError {
             .collect();
 
         UserError::ValidationError(error_messages.join(", "))
-    }
-}
-
-impl fmt::Display for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ApiError::Internal {
-                message,
-            } => write!(f, "Internal error: {}", message),
-            ApiError::Database(err) => write!(f, "Database error: {}", err),
-            ApiError::Auth(msg) => write!(f, "Authentication error: {}", msg),
-            ApiError::Config {
-                message,
-            } => write!(f, "Configuration error: {}", message),
-            ApiError::Validation(err) => write!(f, "Validation error: {}", err),
-            ApiError::Password(msg) => write!(f, "Password error: {}", msg),
-            ApiError::UserNotFound => write!(f, "User not found"),
-            ApiError::EmailAlreadyExists => write!(f, "Email already exists"),
-            ApiError::InvalidCredentials => write!(f, "Invalid credentials"),
-            ApiError::Mfa(err) => write!(f, "MFA error: {}", err),
-            ApiError::Jwt(err) => write!(f, "JWT error: {}", err),
-            ApiError::RateLimit => write!(f, "Rate limit exceeded"),
-            ApiError::PermissionDenied => write!(f, "Permission denied"),
-            ApiError::AccountLocked => write!(f, "Account locked"),
-            ApiError::SessionExpired => write!(f, "Session expired"),
-        }
     }
 }
