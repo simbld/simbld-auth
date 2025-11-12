@@ -1,19 +1,17 @@
-use crate::auth::jwt::JwtManager;
-use crate::auth::session::Session;
-use crate::config::AppConfig;
-use crate::db::PgPool;
-use crate::errors::ApiError;
-use crate::models::user::User;
-use actix_web::{cookie::Cookie, http::header, web, HttpRequest, HttpResponse};
+use crate::auth::jwt::JwtService;
+use crate::auth::session::SessionTokens;
+use crate::types::{ApiError, AppConfig};
+use crate::user::models::User;
+use sqlx::PgPool;
+
+use actix_web::{cookie::Cookie, http::header, HttpRequest, HttpResponse};
 use chrono::Utc;
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::async_http_client;
 use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
-    PkceCodeVerifier, RedirectUrl, RequestTokenError, Scope, TokenResponse, TokenUrl,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
+    TokenResponse, TokenUrl,
 };
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -70,23 +68,35 @@ pub struct OAuthUserInfo {
 pub struct OAuthService {
     clients: HashMap<OAuthProvider, Arc<dyn OAuthClient>>,
     state_store: StateStore,
-    jwt_manager: JwtManager,
+    jwt_manager: JwtService,
     db_client: Arc<dyn DbClient>,
 }
 
+#[async_trait::async_trait]
 pub trait OAuthClient: Send + Sync {
     async fn authorize_url(&self, redirect_uri: &str, state: &str) -> Result<String, OAuthError>;
     async fn exchange_code(&self, code: &str, redirect_uri: &str) -> Result<String, OAuthError>;
     async fn get_user_info(&self, access_token: &str) -> Result<OAuthUserInfo, OAuthError>;
 }
 
+#[async_trait::async_trait]
 pub trait DbClient: Send + Sync {
-    async fn query_opt<T: FromRow>(
+    async fn query_opt<T: Send + Sync>(
         &self,
         query: &str,
-        params: &[&(dyn ToSql + Sync)],
+        params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres>
+                + sqlx::Type<sqlx::Postgres>
+                + Send
+                + Sync)],
     ) -> Result<Option<T>, Error>;
-    async fn execute(&self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error>;
+    async fn execute(
+        &self,
+        query: &str,
+        params: &[&(dyn sqlx::Encode<'_, sqlx::Postgres>
+                + sqlx::Type<sqlx::Postgres>
+                + Send
+                + Sync)],
+    ) -> Result<u64, Error>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -117,7 +127,7 @@ impl From<OAuthError> for ApiError {
 }
 
 impl OAuthService {
-    pub fn new(config: &AppConfig, jwt_manager: JwtManager) -> Self {
+    pub fn new(config: &AppConfig, jwt_manager: JwtService) -> Self {
         let mut clients: HashMap<OAuthProvider, Arc<dyn OAuthClient>> = HashMap::new();
 
         // Configure Google OAuth client
@@ -194,7 +204,7 @@ impl OAuthService {
         // Generate a random state ID and CSRF token
         let state_id = Uuid::new_v4().to_string();
         let csrf_token: String =
-            thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
+            rand::rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
 
         // Store state in state store
         let state = OAuthState {
@@ -250,7 +260,7 @@ impl OAuthService {
         let user_id = self.find_or_create_user(&user_info).await?;
 
         // Create a new session
-        let session = Session::new(&user_id);
+        let session = SessionTokens::new(&user_id);
         self.save_session(&session).await?;
 
         // Generate JWT
@@ -397,7 +407,7 @@ impl OAuthService {
         Ok(username)
     }
 
-    async fn save_session(&self, session: &Session) -> Result<(), ApiError> {
+    async fn save_session(&self, session: &SessionTokens) -> Result<(), ApiError> {
         let query = "
             INSERT INTO sessions (id, user_id, created_at, expires_at)
             VALUES ($1, $2, $3, $4)
@@ -455,7 +465,7 @@ impl OAuthClient for GoogleOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -539,7 +549,7 @@ impl OAuthClient for GitHubOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -655,7 +665,7 @@ impl OAuthClient for FacebookOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -751,7 +761,7 @@ impl OAuthClient for MicrosoftOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(async_http_client)
+            .request_async(oauth2::reqwest::async_http_client)
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -986,22 +996,20 @@ pub mod routes {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::auth::jwt::JwtManager;
+        use crate::auth::jwt::JwtService;
         use crate::config::AppConfig;
         use crate::mocks::mock_client::{
             create_mock_row_with_exists, create_mock_user_row, MockClient,
         };
         use crate::mocks::mock_oauth::MockOAuthService;
         use actix_web::{http, test, web, App, HttpRequest, HttpResponse};
-        use serde_json::json;
         use std::collections::HashMap;
         use std::sync::{Arc, RwLock};
-        use tokio_postgres::row::Row;
         use uuid::Uuid;
 
         // Test for OAuthProvider display formatting
         #[test]
-        fn test_oauth_provider_display() {
+        async fn test_oauth_provider_display() {
             assert_eq!(OAuthProvider::Google.to_string(), "google");
             assert_eq!(OAuthProvider::GitHub.to_string(), "github");
             assert_eq!(OAuthProvider::Facebook.to_string(), "facebook");
@@ -1010,7 +1018,7 @@ pub mod routes {
 
         // Test for OAuthProvider from string conversion
         #[test]
-        fn test_oauth_provider_from_str() {
+        async fn test_oauth_provider_from_str() {
             assert_eq!(OAuthProvider::from("google"), OAuthProvider::Google);
             assert_eq!(OAuthProvider::from("GOOGLE"), OAuthProvider::Google);
             assert_eq!(OAuthProvider::from("github"), OAuthProvider::GitHub);
@@ -1021,7 +1029,7 @@ pub mod routes {
 
         // Test for OAuthState serialization and deserialization
         #[test]
-        fn test_oauth_state_serialization() {
+        async fn test_oauth_state_serialization() {
             let state = OAuthState {
                 csrf_token: "abc123".to_string(),
                 redirect_uri: "https://example.com/callback".to_string(),
@@ -1036,7 +1044,7 @@ pub mod routes {
 
         // Test for OAuthUserInfo serialization and deserialization
         #[test]
-        fn test_oauth_user_info_serialization() {
+        async fn test_oauth_user_info_serialization() {
             let user_info = OAuthUserInfo {
                 provider_user_id: "12345".to_string(),
                 provider: OAuthProvider::Google,
@@ -1065,7 +1073,7 @@ pub mod routes {
                 ..Default::default()
             };
 
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let oauth_service = web::Data::new(OAuthService::new(&app_config, jwt_manager));
 
             let app = test::init_service(App::new().app_data(oauth_service.clone()).route(
@@ -1105,7 +1113,7 @@ pub mod routes {
                 ..Default::default()
             };
 
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let mut oauth_service = OAuthService::new(&app_config, jwt_manager);
 
             // Replace the OAuth client with a mock
@@ -1184,7 +1192,7 @@ pub mod routes {
                 ..Default::default()
             };
 
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let oauth_service = OAuthService::new(&app_config, jwt_manager);
 
             assert!(oauth_service.clients.contains_key(&OAuthProvider::Google));
@@ -1240,7 +1248,7 @@ pub mod routes {
 
             // Create the OAuthService with the mock client
             let app_config = AppConfig::default();
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let mut oauth_service = OAuthService::new(&app_config, jwt_manager);
             oauth_service.db_client = Arc::new(mock_client);
 
@@ -1274,7 +1282,7 @@ pub mod routes {
 
             // Create the OAuthService with the mock client
             let app_config = AppConfig::default();
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let mut oauth_service = OAuthService::new(&app_config, jwt_manager);
             oauth_service.db_client = Arc::new(mock_client);
 
@@ -1301,14 +1309,14 @@ pub mod routes {
         async fn test_save_session() {
             // Create a mock session
             let user_id = "test_user_id";
-            let session = Session::new(user_id);
+            let session = SessionTokens::new(user_id);
 
             // Create a mock client that returns success for execute
             let mock_client = MockClient::with_execute_result(1);
 
             // Create the OAuthService with the mock client
             let app_config = AppConfig::default();
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let mut oauth_service = OAuthService::new(&app_config, jwt_manager);
             oauth_service.db_client = Arc::new(mock_client);
 
@@ -1371,7 +1379,7 @@ pub mod routes {
                 ..Default::default()
             };
 
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let oauth_service = OAuthService::new(&app_config, jwt_manager);
 
             let redirect_uri = "https://example.com/callback";
@@ -1391,7 +1399,7 @@ pub mod routes {
         #[tokio::test]
         async fn test_callback_invalid_state() {
             let app_config = AppConfig::default();
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let oauth_service = OAuthService::new(&app_config, jwt_manager);
 
             let provider = OAuthProvider::Google;
@@ -1416,7 +1424,7 @@ pub mod routes {
                 ..Default::default()
             };
 
-            let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7);
+            let jwt_manager = JwtService::new("test_secret", 60 * 24 * 7);
             let mut oauth_service = OAuthService::new(&app_config, jwt_manager);
 
             // Replace the OAuth client with a mock
@@ -1452,7 +1460,7 @@ pub mod routes {
                 _state: &str,
             ) -> Result<String, OAuthError> {
                 Ok(format!("https://example.com/auth?client_id=test&redirect_uri={}&state={}&response_type=code",
-                   _redirect_uri, _state))
+						   _redirect_uri, _state))
             }
 
             async fn exchange_code(

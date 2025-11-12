@@ -1,10 +1,10 @@
-use crate::auth::jwt::JwtManager;
+use crate::auth::jwt::JwtService;
 use crate::auth::oauth::{OAuthProvider, OAuthService};
-use crate::config::AppConfig;
+use crate::types::AppConfig;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-// Mock response for user info
+// Mock response for user information
 pub struct MockUserInfoResponse {
     pub provider_name: OAuthProvider,
     pub provider_user_id: String,
@@ -16,7 +16,7 @@ pub struct MockUserInfoResponse {
 pub struct MockOAuthService {
     pub authorize_responses: Arc<RwLock<HashMap<OAuthProvider, Result<String, String>>>>,
     pub user_info_responses: Arc<RwLock<HashMap<String, MockUserInfoResponse>>>,
-    pub jwt_manager: JwtManager,
+    pub jwt_manager: JwtService,
 }
 
 impl MockOAuthService {
@@ -24,7 +24,7 @@ impl MockOAuthService {
         MockOAuthService {
             authorize_responses: Arc::new(RwLock::new(HashMap::new())),
             user_info_responses: Arc::new(RwLock::new(HashMap::new())),
-            jwt_manager: JwtManager::new("test_secret", 60 * 24 * 7), // 7 days
+            jwt_manager: JwtService::new("test_secret"),
         }
     }
 
@@ -43,27 +43,36 @@ impl MockOAuthService {
     // Create a real OAuthService with test configuration
     pub fn create_real_service() -> OAuthService {
         let app_config = AppConfig {
-            base_url: "http://localhost:8080".to_string(),
-            google_client_id: Some("google_client_id".to_string()),
-            google_client_secret: Some("google_client_secret".to_string()),
-            github_client_id: Some("github_client_id".to_string()),
-            github_client_secret: Some("github_client_secret".to_string()),
-            facebook_client_id: Some("facebook_client_id".to_string()),
-            facebook_client_secret: Some("facebook_client_secret".to_string()),
-            microsoft_client_id: Some("microsoft_client_id".to_string()),
-            microsoft_client_secret: Some("microsoft_client_secret".to_string()),
-            ..Default::default()
+            database_url: "postgresql://localhost/simbld_auth".to_string(),
+            server: Default::default(),
+            mfa: Default::default(),
+            jwt_secret: "test_secret".to_string(),
+            cors_origins: vec!["*".to_string()],
+            rate_limit: 100,
+            log_level: "info".to_string(),
         };
 
-        let jwt_manager = JwtManager::new("test_secret", 60 * 24 * 7); // 7 days
+        let jwt_manager = JwtService::new("test_secret");
         OAuthService::new(&app_config, jwt_manager)
     }
 }
 
 // Helper function to create OAuthService for testing
 pub fn create_test_oauth_service_with_client(
-    mock_client: crate::mocks::mock_client::MockClient,
+    _mock_client: crate::mocks::mock_client::MockClient,
 ) -> OAuthService {
-    // In a real implementation, this would create an OAuthService instance with the mock client
-    todo!("Implement create_test_oauth_service_with_client to return a valid OAuthService that uses the provided mock client")
+    // TODO: Inject mock_client when OAuthService will support dependency injection
+
+    let app_config = AppConfig {
+        database_url: "postgresql://localhost/test_db".to_string(),
+        server: Default::default(),
+        mfa: Default::default(),
+        jwt_secret: "test_secret_key".to_string(),
+        cors_origins: vec!["http://localhost:3000".to_string()],
+        rate_limit: 100,
+        log_level: "debug".to_string(),
+    };
+
+    let jwt_service = JwtService::new("test_secret_key");
+    OAuthService::new(&app_config, jwt_service)
 }

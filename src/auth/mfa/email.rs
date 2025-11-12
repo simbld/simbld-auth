@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-use crate::auth::mfa::MfaMethod;
-use crate::config::AppConfig;
-use crate::errors::ApiError;
+use crate::types::{ApiError, AppConfig};
 
 /// Provider for email-based MFA
 #[derive(Debug, Clone)]
@@ -89,7 +87,7 @@ impl EmailMfaProvider {
 
     /// Generate a random verification code
     fn generate_code(&self) -> String {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut code = String::new();
 
         for _ in 0..self.code_length {

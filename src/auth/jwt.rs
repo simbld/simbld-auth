@@ -1,7 +1,7 @@
 //! JWT token management
 //!
 //! Handles creation, validation, and parsing of JWT tokens for authentication
-//! and authorization purposes.
+//! and authorisation purposes.
 
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -67,7 +67,7 @@ impl Clone for JwtService {
     fn clone(&self) -> Self {
         // EncodingKey et DecodingKey ne sont pas Clone, on doit les recréer
         // On ne peut pas cloner les clés directement, donc on retourne une erreur pour l’instant
-        panic!("JwtService can't be cloned - keys must be recreated with new()")
+        panic!("JwtService can't be cloned–keys must be recreated with new()")
     }
 }
 
@@ -141,7 +141,18 @@ mod tests {
     #[test]
     fn test_jwt_service_creation() {
         let service = JwtService::new("test_secret");
-        // Test service can be created
+
+        // ✅ Vérifiez que le service fonctionne vraiment
+        let user_id = Uuid::new_v4();
+        let claims = Claims::new(user_id);
+
+        // Génère un token
+        let token = service.generate_access_token(&claims);
+        assert!(token.is_ok(), "Token generation should succeed");
+
+        // Vérifie qu'on peut le valider
+        let validated = service.validate_access_token(&token.unwrap());
+        assert!(validated.is_ok(), "Token validation should succeed");
     }
 
     #[test]

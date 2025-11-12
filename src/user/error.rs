@@ -43,6 +43,18 @@ pub enum UserError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    #[error("Server error: {0}")]
+    ServerError(String),
+
+    #[error("Database connection error: {0}")]
+    DbConnectionError(String),
+
+    #[error("Email already exists")]
+    EmailExists,
+
+    #[error("Rate limit exceeded")]
+    RateLimitExceeded,
 }
 
 impl UserError {
@@ -57,6 +69,10 @@ impl UserError {
             UserError::CurrentPasswordIncorrect => StatusCode::BAD_REQUEST,
             UserError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             UserError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::ServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::DbConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::EmailExists => StatusCode::CONFLICT,
+            UserError::RateLimitExceeded => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 
@@ -71,6 +87,10 @@ impl UserError {
             UserError::CurrentPasswordIncorrect => Some("CURRENT_PASSWORD_INCORRECT".to_string()),
             UserError::DatabaseError(_) => Some("DATABASE_ERROR".to_string()),
             UserError::InternalError(_) => Some("INTERNAL_ERROR".to_string()),
+            UserError::ServerError(_) => Some("SERVER_ERROR".to_string()),
+            UserError::DbConnectionError(_) => Some("DB_CONNECTION_ERROR".to_string()),
+            UserError::EmailExists => Some("EMAIL_EXISTS".to_string()),
+            UserError::RateLimitExceeded => Some("RATE_LIMIT_EXCEEDED".to_string()),
         }
     }
 

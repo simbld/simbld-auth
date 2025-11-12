@@ -8,8 +8,14 @@ use crate::utils::response_handler::ResponseHandler;
 use actix_web::{HttpRequest, HttpResponse};
 use simbld_http::responses::ResponsesTypes;
 use simbld_http::ResponsesServerCodes;
+use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::time::Duration;
+
+///  Get a PostgreSQL connection pool
+pub async fn get_pg_pool(config: &str) -> Result<sqlx::PgPool, sqlx::Error> {
+    PgPoolOptions::new().max_connections(5).connect(config).await
+}
 
 /// Load complete app configuration
 pub fn load_config() -> Result<AppConfig, ApiError> {
@@ -21,6 +27,17 @@ pub fn load_config() -> Result<AppConfig, ApiError> {
         cors_origins: load_cors_origins(),
         rate_limit: load_rate_limit(),
         log_level: load_log_level(),
+
+        // ✅ Initialise les champs manquants
+        base_url: env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+        google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
+        google_client_secret: env::var("GOOGLE_CLIENT_SECRET").ok(),
+        github_client_id: env::var("GITHUB_CLIENT_ID").ok(),
+        github_client_secret: env::var("GITHUB_CLIENT_SECRET").ok(),
+        facebook_client_id: env::var("FACEBOOK_CLIENT_ID").ok(),
+        facebook_client_secret: env::var("FACEBOOK_CLIENT_SECRET").ok(),
+        microsoft_client_id: env::var("MICROSOFT_CLIENT_ID").ok(),
+        microsoft_client_secret: env::var("MICROSOFT_CLIENT_SECRET").ok(),
     };
 
     validate_config(&config)?;
@@ -239,6 +256,15 @@ mod tests {
             cors_origins: vec!["*".to_string()],
             rate_limit: 100,
             log_level: "info".to_string(),
+            base_url: "http://localhost:8080".to_string(),
+            google_client_id: Some("google_client_id".to_string()),
+            google_client_secret: Some("google_client_secret".to_string()),
+            github_client_id: Some("github_client_id".to_string()),
+            github_client_secret: Some("github_client_secret".to_string()),
+            facebook_client_id: Some("facebook_client_id".to_string()),
+            facebook_client_secret: Some("facebook_client_secret".to_string()),
+            microsoft_client_id: Some("microsoft_client_id".to_string()),
+            microsoft_client_secret: Some("microsoft_client_secret".to_string()),
         };
 
         let result = validate_config(&config);

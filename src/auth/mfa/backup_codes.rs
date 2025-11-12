@@ -10,7 +10,7 @@ use argon2::{
 use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Pool, Postgres};
+use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use uuid::Uuid;
 

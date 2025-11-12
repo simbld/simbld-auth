@@ -19,55 +19,26 @@ pub enum StartupError {
 }
 
 /// Runtime API errors
-#[derive(Debug, Error, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ApiError {
-    #[error("Internal server error: {message}")]
     Internal {
         message: String,
     },
-
-    #[error("Database error: {0}")]
     Database(String),
-
-    #[error("Authentication error: {0}")]
     Auth(String),
-
-    #[error("Configuration error: {message}")]
     Config {
         message: String,
     },
-
-    #[error("Validation error: {0}")]
     Validation(String),
-
-    #[error("Password error: {0}")]
     Password(String),
-
-    #[error("User not found")]
     UserNotFound,
-
-    #[error("Email already exists")]
     EmailAlreadyExists,
-
-    #[error("Invalid credentials")]
     InvalidCredentials,
-
-    #[error("MFA error: {0}")]
     Mfa(String),
-
-    #[error("JWT error: {0}")]
     Jwt(String),
-
-    #[error("Rate limit exceeded")]
     RateLimit,
-
-    #[error("Permission denied")]
     PermissionDenied,
-
-    #[error("Account locked")]
     AccountLocked,
-
-    #[error("Session expired")]
     SessionExpired,
 }
 
@@ -81,6 +52,15 @@ pub struct AppConfig {
     pub cors_origins: Vec<String>,
     pub rate_limit: usize,
     pub log_level: String,
+    pub base_url: String,
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub github_client_id: Option<String>,
+    pub github_client_secret: Option<String>,
+    pub facebook_client_id: Option<String>,
+    pub facebook_client_secret: Option<String>,
+    pub microsoft_client_id: Option<String>,
+    pub microsoft_client_secret: Option<String>,
 }
 
 /// Server configuration
@@ -144,6 +124,15 @@ impl Default for AppConfig {
             cors_origins: vec!["*".to_string()],
             rate_limit: 100,
             log_level: "info".to_string(),
+            base_url: "http://localhost:8080".to_string(),
+            google_client_id: None,
+            google_client_secret: None,
+            github_client_id: None,
+            github_client_secret: None,
+            facebook_client_id: None,
+            facebook_client_secret: None,
+            microsoft_client_id: None,
+            microsoft_client_secret: None,
         }
     }
 }
