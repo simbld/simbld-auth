@@ -30,7 +30,10 @@ impl ApiErrorHandler {
             | ApiError::Database(_)
             | ApiError::Config {
                 ..
-            } => ResponsesTypes::ServerError(ResponsesServerCodes::InternalServerError),
+            }
+            | ApiError::InternalServerError(_) => {
+                ResponsesTypes::ServerError(ResponsesServerCodes::InternalServerError)
+            },
 
             // Client errors (4xx)
             ApiError::Auth(_) | ApiError::InvalidCredentials | ApiError::SessionExpired => {
@@ -50,7 +53,10 @@ impl ApiErrorHandler {
             ApiError::Validation(_)
             | ApiError::Password(_)
             | ApiError::Mfa(_)
-            | ApiError::Jwt(_) => ResponsesTypes::ClientError(ResponsesClientCodes::BadRequest),
+            | ApiError::Jwt(_)
+            | ApiError::BadRequest(_) => {
+                ResponsesTypes::ClientError(ResponsesClientCodes::BadRequest)
+            },
 
             ApiError::RateLimit => {
                 ResponsesTypes::ClientError(ResponsesClientCodes::TooManyRequests)
@@ -66,6 +72,7 @@ impl ApiErrorHandler {
             ApiError::Internal {
                 ..
             } => "Internal Server Error".to_string(),
+            ApiError::InternalServerError(_) => "Internal Server Error".to_string(),
             ApiError::Database(_) => "Database Error".to_string(),
             ApiError::Auth(_) => "Authentication Error".to_string(),
             ApiError::Config {
@@ -82,6 +89,7 @@ impl ApiErrorHandler {
             ApiError::PermissionDenied => "Permission Denied".to_string(),
             ApiError::AccountLocked => "Account Locked".to_string(),
             ApiError::SessionExpired => "Session Expired".to_string(),
+            ApiError::BadRequest(_) => "Bad Request".to_string(),
         }
     }
 
