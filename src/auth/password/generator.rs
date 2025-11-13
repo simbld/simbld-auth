@@ -6,8 +6,8 @@
 //! - `SHARING_SIZE`: Constant defining the size of each character category in the password
 //! - `SYMBOLS`: Constant defining the symbols to be used in the password
 
-use rand::rngs::OsRng;
-use rand::seq::SliceRandom;
+use rand::prelude::IndexedRandom;
+use rand::seq::SliceRandom as _;
 
 pub const PASSWORD_LENGTH: usize = 24;
 pub const SHARING_SIZE: usize = PASSWORD_LENGTH / 4;
@@ -18,7 +18,7 @@ fn generate_characters(start: char, end: char) -> Vec<u8> {
 }
 
 pub fn generate_password() -> String {
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     let length = PASSWORD_LENGTH;
 
     let uppercase = generate_characters('A', 'Z');
@@ -28,17 +28,15 @@ pub fn generate_password() -> String {
     let mut password = Vec::with_capacity(length);
 
     for _ in 0..SHARING_SIZE {
-        password.push(*uppercase.choose(&mut rng).unwrap());
-        password.push(*lowercase.choose(&mut rng).unwrap());
-        password.push(*digits.choose(&mut rng).unwrap());
+        password.push(*uppercase.as_slice().choose(&mut rng).unwrap());
+        password.push(*lowercase.as_slice().choose(&mut rng).unwrap());
+        password.push(*digits.as_slice().choose(&mut rng).unwrap());
         password.push(*SYMBOLS.choose(&mut rng).unwrap());
     }
 
     while password.len() < PASSWORD_LENGTH {
-        let &category = [uppercase.as_slice(), lowercase.as_slice(), digits.as_slice(), SYMBOLS]
-            .choose(&mut rng)
-            .unwrap();
-
+        let categories = [uppercase.as_slice(), lowercase.as_slice(), digits.as_slice(), SYMBOLS];
+        let &category = categories.as_slice().choose(&mut rng).unwrap();
         let &next_char = category.choose(&mut rng).unwrap();
         if password.last().map(|&last| last != next_char).unwrap_or(true) {
             password.push(next_char);
