@@ -1,2 +1,3 @@
 pub mod mock_client;
-pub mod mock_oauth;
+// TODO: Re-enable when OAuth is re-enabled
+// pub mod mock_oauth;
