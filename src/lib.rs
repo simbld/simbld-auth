@@ -5,6 +5,7 @@
 
 pub mod auth;
 pub mod health;
+pub mod mock_handlers;
 pub mod mocks;
 pub mod protected;
 pub mod simple_health;
@@ -12,7 +13,6 @@ pub mod sqlx;
 pub mod types;
 pub mod user;
 pub mod utils;
-// pub mod mock_handlers
 
 pub use types::ApiError;
 
