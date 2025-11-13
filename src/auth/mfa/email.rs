@@ -3,6 +3,7 @@
 //! This module provides email-based verification for multi-factor authentication.
 //! It generates random codes, sends them via email, and verifies them.
 
+use crate::auth::mfa::MfaMethod;
 use async_trait::async_trait;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,6 @@ use uuid::Uuid;
 use crate::types::{ApiError, AppConfig};
 
 /// Provider for email-based MFA
-#[derive(Debug, Clone)]
 pub struct EmailMfaProvider {
     /// Email service client
     email_client: Box<dyn EmailClient>,
@@ -70,18 +70,10 @@ impl EmailMfaProvider {
     pub fn new(config: &AppConfig, email_client: Box<dyn EmailClient>) -> Self {
         Self {
             email_client,
-            expiration_seconds: config.mfa.email_code_expiration_seconds.unwrap_or(600), // 10 minutes default
-            code_length: config.mfa.email_code_length.unwrap_or(6),
-            email_subject: config
-                .mfa
-                .email_subject
-                .clone()
-                .unwrap_or_else(|| "Your verification code".to_string()),
-            sender_email: config
-                .mfa
-                .sender_email
-                .clone()
-                .unwrap_or_else(|| "noreply@example.com".to_string()),
+            expiration_seconds: config.mfa.email_code_expiration_seconds, // Already has default in MfaConfig
+            code_length: config.mfa.email_code_length,
+            email_subject: config.mfa.email_subject.clone(),
+            sender_email: config.mfa.sender_email.clone(),
         }
     }
 
@@ -313,48 +305,54 @@ impl EmailClient for SmtpEmailClient {
 }
 
 /// AWS SES email client implementation
+/// TODO: Re-enable when AWS SDK is configured
+#[allow(dead_code)]
 pub struct AwsSesEmailClient {
     region: String,
-    credentials: aws_sdk_sesv2::config::Credentials,
-    client: Option<aws_sdk_sesv2::Client>,
+    // credentials: aws_sdk_sesv2::config::Credentials,
+    // client: Option<aws_sdk_sesv2::Client>,
 }
 
 impl AwsSesEmailClient {
     /// Create a new AWS SES email client
+    /// TODO: Re-enable when AWS SDK is configured
+    #[allow(unused_variables)]
     pub fn new(region: String, access_key: String, secret_key: String) -> Self {
-        let credentials = aws_sdk_sesv2::config::Credentials::new(
-            access_key,
-            secret_key,
-            None,
-            None,
-            "rust-auth-lib",
-        );
+        // let credentials = aws_sdk_sesv2::config::Credentials::new(
+        //     access_key,
+        //     secret_key,
+        //     None,
+        //     None,
+        //     "rust-auth-lib",
+        // );
 
         Self {
             region,
-            credentials,
-            client: None,
+            // credentials,
+            // client: None,
         }
     }
 
     /// Initialize the AWS SES client
+    /// TODO: Re-enable when AWS SDK is configured
+    #[allow(dead_code)]
     async fn init_client(&mut self) -> Result<(), String> {
-        if self.client.is_none() {
-            let config = aws_config::ConfigLoader::default()
-                .region(aws_sdk_sesv2::config::Region::new(self.region.clone()))
-                .credentials_provider(self.credentials.clone())
-                .load()
-                .await;
-
-            self.client = Some(aws_sdk_sesv2::Client::new(&config));
-        }
-
+        // if self.client.is_none() {
+        //     let config = aws_config::ConfigLoader::default()
+        //         .region(aws_sdk_sesv2::config::Region::new(self.region.clone()))
+        //         .credentials_provider(self.credentials.clone())
+        //         .load()
+        //         .await;
+        //     self.client = Some(aws_sdk_sesv2::Client::new(&config));
+        // }
         Ok(())
     }
 }
 
 #[async_trait]
 impl EmailClient for AwsSesEmailClient {
+    /// TODO: Re-enable when AWS SDK is configured
+    #[allow(unused_variables)]
     async fn send_email(
         &self,
         from: &str,
@@ -362,42 +360,30 @@ impl EmailClient for AwsSesEmailClient {
         subject: &str,
         body: &str,
     ) -> Result<(), String> {
-        // We need to clone self to mutate it within this async method
-        let mut this = self.clone();
-        this.init_client().await?;
+        // TODO: AWS SES implementation temporarily disabled
+        Err("AWS SES not configured".to_string())
 
-        let client = this.client.as_ref().unwrap();
-
-        // Create destination
-        let destination = aws_sdk_sesv2::model::Destination::builder().to_addresses(to).build();
-
-        // Create email content
-        let subject_content =
-            aws_sdk_sesv2::model::Content::builder().data(subject).charset("UTF-8").build();
-
-        let body_content =
-            aws_sdk_sesv2::model::Content::builder().data(body).charset("UTF-8").build();
-
-        let message_body = aws_sdk_sesv2::model::Body::builder().text(body_content).build();
-
-        let message = aws_sdk_sesv2::model::Message::builder()
-            .subject(subject_content)
-            .body(message_body)
-            .build();
-
-        // Send email
-        let resp = client
-            .send_email()
-            .from_email_address(from)
-            .destination(destination)
-            .content(aws_sdk_sesv2::model::EmailContent::builder().simple(message).build())
-            .send()
-            .await
-            .map_err(|e| format!("Failed to send email via AWS SES: {}", e))?;
-
-        log::debug!("Email sent with message ID: {:?}", resp.message_id());
-
-        Ok(())
+        // let mut this = self.clone();
+        // this.init_client().await?;
+        // let client = this.client.as_ref().unwrap();
+        // let destination = aws_sdk_sesv2::model::Destination::builder().to_addresses(to).build();
+        // let subject_content = aws_sdk_sesv2::model::Content::builder().data(subject).charset("UTF-8").build();
+        // let body_content = aws_sdk_sesv2::model::Content::builder().data(body).charset("UTF-8").build();
+        // let message_body = aws_sdk_sesv2::model::Body::builder().text(body_content).build();
+        // let message = aws_sdk_sesv2::model::Message::builder()
+        //     .subject(subject_content)
+        //     .body(message_body)
+        //     .build();
+        // let resp = client
+        //     .send_email()
+        //     .from_email_address(from)
+        //     .destination(destination)
+        //     .content(aws_sdk_sesv2::model::EmailContent::builder().simple(message).build())
+        //     .send()
+        //     .await
+        //     .map_err(|e| format!("Failed to send email via AWS SES: {}", e))?;
+        // log::debug!("Email sent with message ID: {:?}", resp.message_id());
+        // Ok(())
     }
 }
 
@@ -406,8 +392,8 @@ impl Clone for AwsSesEmailClient {
     fn clone(&self) -> Self {
         Self {
             region: self.region.clone(),
-            credentials: self.credentials.clone(),
-            client: None, // We'll reinitialize this when needed
+            // credentials: self.credentials.clone(),
+            // client: None,
         }
     }
 }
