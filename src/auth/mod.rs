@@ -15,7 +15,9 @@ pub mod handlers;
 pub mod jwt;
 pub mod mfa;
 pub mod middleware;
-pub mod oauth;
+// TODO: OAuth module temporarily disabled - needs proper implementation with oauth2 crate
+// pub mod oauth;
+// mod oauth;
 pub mod password;
 pub mod routes;
 pub mod service;
