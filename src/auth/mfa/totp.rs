@@ -1,6 +1,6 @@
 //! TOTP (Time-based One-Time Password) implementation for Multi-Factor Authentication.
 //! This module provides functionality for generating, verifying, and managing TOTP-based
-//! authentication, including backup codes generation and QR code generation for easy setup.
+//! authentication, including backup code generation and QR code generation for easy setup.
 
 use base32::Alphabet;
 use base64::{engine::general_purpose, Engine as _};
@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use futures_util::TryFutureExt;
 use hmac::{Hmac, Mac};
 use qrcode::{render::svg, QrCode};
-use rand::{rngs::OsRng, Rng, RngCore};
+use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sqlx::{FromRow, Pool, Postgres, Row};
@@ -43,6 +43,12 @@ pub enum TotpError {
     QrCodeGenerationError(String),
 }
 
+impl From<sqlx::Error> for TotpError {
+    fn from(error: sqlx::Error) -> Self {
+        TotpError::DatabaseError(error.to_string())
+    }
+}
+
 /// MFA method record in the database
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct MfaMethod {
@@ -53,7 +59,7 @@ pub struct MfaMethod {
     pub enabled: bool,
     pub secret: Option<String>,              // Optional secret for TOTP
     pub verified: Option<bool>,              // Optional verification status
-    pub last_used_at: Option<DateTime<Utc>>, // Optional last used timestamp
+    pub last_used_at: Option<DateTime<Utc>>, // Optional last-used timestamp
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -87,9 +93,9 @@ impl TotpService {
     /// Generates a new random TOTP secret
     pub fn generate_secret() -> Result<String, TotpError> {
         let mut bytes = vec![0u8; SECRET_LENGTH];
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
 
-        rng.fill_bytes(&mut bytes);
+        RngCore::fill_bytes(&mut rng, &mut bytes);
 
         // Encode the random bytes using base32 (standard for TOTP)
         let secret = base32::encode(
@@ -114,8 +120,7 @@ impl TotpService {
         )
         .bind(user_id)
         .fetch_optional(pool)
-        .await?
-        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .await?;
 
         if existing.is_some() {
             return Err(TotpError::AlreadySetup);
@@ -138,8 +143,7 @@ impl TotpService {
         .bind(user_id)
         .bind(&secret)
         .fetch_one(pool)
-        .await?
-        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .await?;
 
         // Store the TOTP secret as a special "backup code"
         sqlx::query(
@@ -224,8 +228,7 @@ impl TotpService {
         )
         .bind(user_id)
         .execute(pool)
-        .await?
-        .map_err(|e| TotpError::DatabaseError(e.to_string()))?;
+        .await?;
 
         Ok(true)
     }
@@ -443,7 +446,7 @@ impl TotpService {
 
     /// Generates backup codes for recovery
     fn generate_backup_codes(count: usize) -> Vec<String> {
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let mut codes = Vec::with_capacity(count);
 
         for _ in 0..count {
@@ -476,7 +479,7 @@ impl TotpService {
     fn generate_code(secret: &str, timestamp: u64) -> String {
         // Decode the base32-encoded secret
         let decoded = base32::decode(
-            Alphabet::RFC4648 {
+            Alphabet::Rfc4648 {
                 padding: false,
             },
             secret,
