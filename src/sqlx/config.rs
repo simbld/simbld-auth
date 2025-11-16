@@ -23,12 +23,11 @@ pub fn load_config() -> Result<AppConfig, ApiError> {
         database_url: load_database_url(),
         server: load_server_config(),
         mfa: load_mfa_config(),
+        webauthn: load_webauthn_config(),
         jwt_secret: load_jwt_secret()?,
         cors_origins: load_cors_origins(),
         rate_limit: load_rate_limit(),
         log_level: load_log_level(),
-
-        // ✅ Initialise les champs manquants
         base_url: env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
         google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
         google_client_secret: env::var("GOOGLE_CLIENT_SECRET").ok(),
@@ -84,6 +83,39 @@ fn load_mfa_config() -> MfaConfig {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(10),
+        email_code_expiration_seconds: env::var("MFA_EMAIL_CODE_EXPIRATION")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(600),
+        email_code_length: env::var("MFA_EMAIL_CODE_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(6),
+        email_subject: env::var("MFA_EMAIL_SUBJECT")
+            .unwrap_or_else(|_| "Your verification code".to_string()),
+        sender_email: env::var("MFA_SENDER_EMAIL")
+            .unwrap_or_else(|_| "noreply@example.com".to_string()),
+        sms_code_expiration_seconds: env::var("MFA_SMS_CODE_EXPIRATION")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(600),
+        sms_code_length: env::var("MFA_SMS_CODE_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(6),
+        push_expiration_seconds: env::var("MFA_PUSH_EXPIRATION")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(300),
+    }
+}
+
+/// Load WebAuthn configuration
+fn load_webauthn_config() -> crate::types::WebauthnConfig {
+    crate::types::WebauthnConfig {
+        rp_id: env::var("WEBAUTHN_RP_ID").ok(),
+        rp_name: env::var("WEBAUTHN_RP_NAME").ok(),
+        rp_origin: env::var("WEBAUTHN_RP_ORIGIN").ok(),
     }
 }
 
@@ -208,7 +240,7 @@ fn mask_sensitive_url(url: &str) -> String {
         let (before_at, after_at) = url.split_at(at_pos);
         if let Some(protocol_end) = before_at.find("://") {
             let protocol = &before_at[..protocol_end + 3];
-            format!("{}***@{}", protocol, after_at)
+            format!("{}***{}", protocol, after_at)
         } else {
             "***".to_string()
         }
@@ -245,12 +277,11 @@ mod tests {
                 workers: 1,
                 keep_alive: Duration::from_secs(30),
             },
-            mfa: MfaConfig {
-                recovery_code_count: 8,
-                recovery_code_length: 10,
-                use_separators: true,
-                totp_window: 1,
-                max_backup_codes: 10,
+            mfa: load_mfa_config(),
+            webauthn: crate::types::WebauthnConfig {
+                rp_id: None,
+                rp_name: None,
+                rp_origin: None,
             },
             jwt_secret: "too_short".to_string(), // Too short
             cors_origins: vec!["*".to_string()],

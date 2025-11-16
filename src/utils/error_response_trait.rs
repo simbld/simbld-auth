@@ -58,7 +58,8 @@ impl ApiErrorResponseExt for ApiError {
             | ApiError::Database(_)
             | ApiError::Config {
                 ..
-            } => {
+            }
+            | ApiError::InternalServerError(_) => {
                 use simbld_http::responses::server::ResponsesServerCodes;
                 ResponsesServerCodes::InternalServerError.into_response()
             },
@@ -89,7 +90,7 @@ impl ApiErrorResponseExt for ApiError {
                 ResponsesClientCodes::Conflict.into_response()
             },
 
-            ApiError::Mfa(_) => {
+            ApiError::Mfa(_) | ApiError::BadRequest(_) => {
                 use simbld_http::responses::client::ResponsesClientCodes;
                 ResponsesClientCodes::BadRequest.into_response()
             },

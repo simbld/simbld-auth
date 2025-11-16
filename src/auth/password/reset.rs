@@ -9,7 +9,6 @@
 use crate::auth::password::security::{PasswordService, SecurePassword};
 use crate::types::ApiError;
 use chrono::{DateTime, Duration, Utc};
-use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -71,7 +70,8 @@ impl PasswordResetService {
     pub fn generate_reset_token(user_id: Uuid) -> Result<(String, ResetToken), ApiError> {
         // Generate a cryptographically secure random token
         let mut token_bytes = [0u8; RESET_TOKEN_LENGTH];
-        OsRng.fill_bytes(&mut token_bytes);
+        let mut rng = rand::rng();
+        RngCore::fill_bytes(&mut rng, &mut token_bytes);
 
         // Convert to hex string for transmission
         let token_string = hex::encode(&token_bytes);

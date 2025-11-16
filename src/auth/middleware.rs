@@ -40,7 +40,7 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(AuthenticationMiddleware {
-            service,
+            service: Rc::new(service),
             jwt_service: Rc::clone(&self.jwt_service),
         }))
     }
@@ -48,7 +48,7 @@ where
 
 /// Authentication middleware implementation
 pub struct AuthenticationMiddleware<S> {
-    service: S,
+    service: Rc<S>,
     jwt_service: Rc<JwtService>,
 }
 
@@ -66,6 +66,7 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let jwt_service = Rc::clone(&self.jwt_service);
+        let service = Rc::clone(&self.service);
 
         async move {
             // Remove Authorization header
@@ -92,7 +93,7 @@ where
             req.extensions_mut().insert(claims);
 
             // Continue to the next service
-            let service_response = self.service.call(req).await?;
+            let service_response = service.call(req).await?;
             Ok(service_response)
         }
         .boxed_local()
@@ -128,13 +129,13 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(RequireAuthMiddleware {
-            service,
+            service: Rc::new(service),
         }))
     }
 }
 
 pub struct RequireAuthMiddleware<S> {
-    service: S,
+    service: Rc<S>,
 }
 
 impl<S, B> Service<ServiceRequest> for RequireAuthMiddleware<S>
@@ -150,6 +151,8 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
+        let service = Rc::clone(&self.service);
+
         async move {
             // Check if claims exist in request extensions (set by Authentication middleware)
             if req.extensions().get::<Claims>().is_none() {
@@ -157,7 +160,7 @@ where
             }
 
             // Continue to the next service
-            let service_response = self.service.call(req).await?;
+            let service_response = service.call(req).await?;
             Ok(service_response)
         }
         .boxed_local()

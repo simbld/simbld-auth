@@ -3,7 +3,10 @@
 //! Contains all shared data structures, error types, and configuration models
 //! used throughout the app.
 
+use actix_web::http::StatusCode;
+use actix_web::{HttpResponse, ResponseError};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -40,6 +43,23 @@ pub enum ApiError {
     PermissionDenied,
     AccountLocked,
     SessionExpired,
+    BadRequest(String),
+    InternalServerError(String),
+}
+
+impl ApiError {
+    pub fn new(status: u16, message: String) -> Self {
+        match status {
+            400 => ApiError::BadRequest(message),
+            401 => ApiError::Auth(message),
+            403 => ApiError::PermissionDenied,
+            404 => ApiError::UserNotFound,
+            429 => ApiError::RateLimit,
+            _ => ApiError::Internal {
+                message,
+            },
+        }
+    }
 }
 
 /// Complete app configuration
@@ -48,6 +68,7 @@ pub struct AppConfig {
     pub database_url: String,
     pub server: ServerConfig,
     pub mfa: MfaConfig,
+    pub webauthn: WebauthnConfig,
     pub jwt_secret: String,
     pub cors_origins: Vec<String>,
     pub rate_limit: usize,
@@ -80,6 +101,31 @@ pub struct MfaConfig {
     pub use_separators: bool,
     pub totp_window: u32,
     pub max_backup_codes: usize,
+    pub email_code_expiration_seconds: u64,
+    pub email_code_length: usize,
+    pub email_subject: String,
+    pub sender_email: String,
+    pub sms_code_expiration_seconds: u64,
+    pub sms_code_length: usize,
+    pub push_expiration_seconds: u64,
+}
+
+/// WebAuthn configuration
+#[derive(Debug, Clone)]
+pub struct WebauthnConfig {
+    pub rp_id: Option<String>,
+    pub rp_name: Option<String>,
+    pub rp_origin: Option<String>,
+}
+
+impl Default for WebauthnConfig {
+    fn default() -> Self {
+        Self {
+            rp_id: None,
+            rp_name: None,
+            rp_origin: None,
+        }
+    }
 }
 
 /// User registration data
@@ -120,6 +166,7 @@ impl Default for AppConfig {
             database_url: "postgresql://localhost/simbld_auth".to_string(),
             server: ServerConfig::default(),
             mfa: MfaConfig::default(),
+            webauthn: WebauthnConfig::default(),
             jwt_secret: "change_me_in_production".to_string(),
             cors_origins: vec!["*".to_string()],
             rate_limit: 100,
@@ -156,6 +203,76 @@ impl Default for MfaConfig {
             use_separators: true,
             totp_window: 1,
             max_backup_codes: 10,
+            email_code_expiration_seconds: 600,
+            email_code_length: 6,
+            email_subject: "Your verification code".to_string(),
+            sender_email: "noreply@example.com".to_string(),
+            sms_code_expiration_seconds: 600,
+            sms_code_length: 6,
+            push_expiration_seconds: 300,
         }
+    }
+}
+
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ApiError::Internal {
+                message,
+            } => write!(f, "Internal error: {}", message),
+            ApiError::Database(err) => write!(f, "Database error: {}", err),
+            ApiError::Auth(msg) => write!(f, "Authentication error: {}", msg),
+            ApiError::Config {
+                message,
+            } => write!(f, "Configuration error: {}", message),
+            ApiError::Validation(err) => write!(f, "Validation error: {}", err),
+            ApiError::Password(msg) => write!(f, "Password error: {}", msg),
+            ApiError::UserNotFound => write!(f, "User not found"),
+            ApiError::EmailAlreadyExists => write!(f, "Email already exists"),
+            ApiError::InvalidCredentials => write!(f, "Invalid credentials"),
+            ApiError::Mfa(err) => write!(f, "MFA error: {}", err),
+            ApiError::Jwt(err) => write!(f, "JWT error: {}", err),
+            ApiError::RateLimit => write!(f, "Rate limit exceeded"),
+            ApiError::PermissionDenied => write!(f, "Permission denied"),
+            ApiError::AccountLocked => write!(f, "Account locked"),
+            ApiError::SessionExpired => write!(f, "Session expired"),
+            ApiError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            ApiError::InternalServerError(msg) => write!(f, "Internal server error: {}", msg),
+        }
+    }
+}
+
+impl ResponseError for ApiError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            ApiError::Internal {
+                ..
+            } => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Auth(_) => StatusCode::UNAUTHORIZED,
+            ApiError::Config {
+                ..
+            } => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Validation(_) => StatusCode::BAD_REQUEST,
+            ApiError::Password(_) => StatusCode::BAD_REQUEST,
+            ApiError::UserNotFound => StatusCode::NOT_FOUND,
+            ApiError::EmailAlreadyExists => StatusCode::CONFLICT,
+            ApiError::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            ApiError::Mfa(_) => StatusCode::BAD_REQUEST,
+            ApiError::Jwt(_) => StatusCode::UNAUTHORIZED,
+            ApiError::RateLimit => StatusCode::TOO_MANY_REQUESTS,
+            ApiError::PermissionDenied => StatusCode::FORBIDDEN,
+            ApiError::AccountLocked => StatusCode::FORBIDDEN,
+            ApiError::SessionExpired => StatusCode::UNAUTHORIZED,
+            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(self.status_code()).json(serde_json::json!({
+            "status": self.status_code().as_u16(),
+            "message": self.to_string(),
+        }))
     }
 }

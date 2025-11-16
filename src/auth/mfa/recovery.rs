@@ -12,7 +12,7 @@ use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::mfa::totp::MfaMethod;
+use crate::auth::mfa::MfaMethod;
 
 /// Provider for recovery codes
 #[derive(Debug, Clone)]
@@ -94,13 +94,9 @@ impl RecoveryCodeProvider {
     /// Create a new recovery code provider
     pub fn new(config: &AppConfig) -> Self {
         Self {
-            code_count: config.mfa.as_ref().and_then(|m| m.recovery_code_count).unwrap_or(8),
-            code_length: config.mfa.as_ref().and_then(|m| m.recovery_code_length).unwrap_or(10),
-            use_separators: config
-                .mfa
-                .as_ref()
-                .and_then(|m| m.recovery_code_use_separators)
-                .unwrap_or(true),
+            code_count: config.mfa.recovery_code_count,
+            code_length: config.mfa.recovery_code_length,
+            use_separators: config.mfa.use_separators,
             character_set: RecoveryCodeCharset::Alphanumeric,
             argon2_config: Argon2::default(),
         }
@@ -231,7 +227,10 @@ impl RecoveryCodeProvider {
 
     /// Hash a recovery code
     fn hash_code(&self, code: &str) -> Result<String, ApiError> {
-        let salt = SaltString::generate(&mut rand::rng());
+        // Use password_hash's OsRng which is compatible with argon2
+        use argon2::password_hash::rand_core::OsRng as PasswordHashOsRng;
+        let mut rng = PasswordHashOsRng;
+        let salt = SaltString::generate(&mut rng);
 
         self.argon2_config
             .hash_password(code.as_bytes(), &salt)
@@ -353,7 +352,7 @@ mod tests {
             argon2_config: Argon2::default(),
         };
 
-        assert_eq!(provider.get_method_name(), "recovery");
+        assert_eq!(provider.get_method_name(), "recovery_code");
     }
 
     // Test single code generation

@@ -4,7 +4,8 @@ use crate::types::{ApiError, AppConfig};
 use crate::user::models::User;
 use sqlx::PgPool;
 
-use actix_web::{cookie::Cookie, http::header, HttpRequest, HttpResponse};
+use actix_web::{cookie::Cookie, http::header};
+use actix_web::{HttpRequest as ActixHttpRequest, HttpResponse as ActixHttpResponse};
 use chrono::Utc;
 use oauth2::basic::BasicClient;
 use oauth2::{
@@ -465,7 +466,8 @@ impl OAuthClient for GoogleOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(oauth2::reqwest::async_http_client)
+            // TODO: .request_async(async_http_client)
+            .request_async(|_req| async { Err("Not implemented".into()) })
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -549,7 +551,8 @@ impl OAuthClient for GitHubOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(oauth2::reqwest::async_http_client)
+            // TODO: .request_async(async_http_client)
+            .request_async(|_req| async { Err("Not implemented".into()) })
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -665,7 +668,8 @@ impl OAuthClient for FacebookOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(oauth2::reqwest::async_http_client)
+            // TODO: .request_async(async_http_client)
+            .request_async(|_req| async { Err("Not implemented".into()) })
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -761,7 +765,8 @@ impl OAuthClient for MicrosoftOAuthClient {
         let token_result = self
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(oauth2::reqwest::async_http_client)
+            // TODO: .request_async(async_http_client)
+            .request_async(|_req| async { Err("Not implemented".into()) })
             .await
             .map_err(|e| OAuthError::TokenExchangeError(e.to_string()))?;
 
@@ -871,23 +876,6 @@ pub trait FromRow: Sized {
 
 pub trait ToSql {
     fn to_sql(&self) -> Result<tokio_postgres::types::ToSql, Error>;
-}
-
-impl FromRow for User {
-    fn from_row(row: tokio_postgres::Row) -> Result<Self, Error> {
-        Ok(User {
-            id: row.get("id"),
-            username: row.get("username"),
-            email: row.get("email"),
-            password_hash: row.try_get("password_hash").unwrap_or_default(),
-            provider: row.try_get("provider").unwrap_or_default(),
-            provider_user_id: row.try_get("provider_user_id").unwrap_or_default(),
-            display_name: row.try_get("display_name").unwrap_or_default(),
-            profile_image: row.try_get("profile_image").unwrap_or_default(),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        })
-    }
 }
 
 // Routes module for OAuth flows

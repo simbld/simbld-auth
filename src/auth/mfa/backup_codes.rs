@@ -1,7 +1,6 @@
 //! Backup codes for account recovery when MFA devices are lost or unavailable.
 //!
-//! These single-use codes allow users to authenticate when they cannot access their
-//! primary MFA method (TOTP app, WebAuthn device, etc).
+//! These single-use codes allow users to authenticate when they can't access their
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -76,7 +75,7 @@ impl BackupCodeService {
                 Utc::now(),
                 user_id
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await
             .map_err(|e| BackupCodeError::DatabaseError(e.to_string()))?;
         }
@@ -98,7 +97,7 @@ impl BackupCodeService {
                 batch_id,
                 now
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await
             .map_err(|e| BackupCodeError::DatabaseError(e.to_string()))?;
         }
@@ -234,7 +233,7 @@ mod tests {
         let code = "ABCDEF1234";
         let hash = hash_code(code).unwrap();
 
-        // Verify correct code works
+        // Verify the correct code works
         assert!(verify_code_hash(code, &hash).unwrap());
 
         // Verify incorrect code fails
