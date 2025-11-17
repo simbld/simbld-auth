@@ -52,7 +52,7 @@ fn load_database_url() -> String {
 fn load_server_config() -> ServerConfig {
     ServerConfig {
         host: env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
-        port: env::var("SERVER_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080),
+        port: env::var("SERVER_PORT").ok().and_then(|p| p.parse::<u32>().ok()).unwrap_or(8080),
         workers: env::var("SERVER_WORKERS")
             .ok()
             .and_then(|w| w.parse().ok())
