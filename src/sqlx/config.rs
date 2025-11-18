@@ -1,4 +1,4 @@
-//! Configuration management for simbld_auth
+//! Configuration management
 //!
 //! Handles loading and validation of app configuration from environment variables
 //! with sensible defaults and comprehensive error handling.
@@ -12,7 +12,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::time::Duration;
 
-///  Get a PostgreSQL connection pool
+///  Get a `PostgreSQL` connection pool
 pub async fn get_pg_pool(config: &str) -> Result<sqlx::PgPool, sqlx::Error> {
     PgPoolOptions::new().max_connections(5).connect(config).await
 }
