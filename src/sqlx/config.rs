@@ -12,12 +12,27 @@ use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::time::Duration;
 
-///  Get a `PostgreSQL` connection pool
+/// Get a `PostgreSQL` connection pool.
+///
+/// # Errors
+///
+/// Returns a `sqlx::Error` if connecting to the database fails (e.g. invalid
+/// connection string or network issues).
+#[must_use]
 pub async fn get_pg_pool(config: &str) -> Result<sqlx::PgPool, sqlx::Error> {
     PgPoolOptions::new().max_connections(5).connect(config).await
 }
 
-/// Load complete app configuration
+/// Load complete app configuration.
+///
+/// Reads environment variables, applies defaults and validates the resulting
+/// `AppConfig`.
+///
+/// # Errors
+///
+/// Returns `ApiError::Config` when a required value is missing or validation
+/// fails (for example missing `JWT_SECRET` or invalid numeric ranges).
+#[must_use]
 pub fn load_config() -> Result<AppConfig, ApiError> {
     let config = AppConfig {
         database_url: load_database_url(),
@@ -41,6 +56,19 @@ pub fn load_config() -> Result<AppConfig, ApiError> {
 
     validate_config(&config)?;
     Ok(config)
+}
+
+pub fn load_config_with_error_handling(
+    req: &HttpRequest,
+    duration: Duration,
+) -> Result<AppConfig, HttpResponse> {
+    match load_config() {
+        Ok(config) => Ok(config),
+        Err(api_error) => {
+            let error_message = format!("Failed to load configuration: {api_error}");
+            Err(create_config_error_response(req, &error_message, duration))
+        },
+    }
 }
 
 /// Load database configuration
