@@ -16,9 +16,8 @@ use std::time::Duration;
 ///
 /// # Errors
 ///
-/// Returns a `sqlx::Error` if connecting to the database fails (e.g. invalid
+/// Returns a `sqlx::Error` if connecting to the database fails
 /// connection string or network issues).
-#[must_use]
 pub async fn get_pg_pool(config: &str) -> Result<sqlx::PgPool, sqlx::Error> {
     PgPoolOptions::new().max_connections(5).connect(config).await
 }
@@ -31,8 +30,7 @@ pub async fn get_pg_pool(config: &str) -> Result<sqlx::PgPool, sqlx::Error> {
 /// # Errors
 ///
 /// Returns `ApiError::Config` when a required value is missing or validation
-/// fails (for example missing `JWT_SECRET` or invalid numeric ranges).
-#[must_use]
+/// fails (for example, missing `JWT_SECRET` or invalid numeric ranges).
 pub fn load_config() -> Result<AppConfig, ApiError> {
     let config = AppConfig {
         database_url: load_database_url(),
@@ -56,19 +54,6 @@ pub fn load_config() -> Result<AppConfig, ApiError> {
 
     validate_config(&config)?;
     Ok(config)
-}
-
-pub fn load_config_with_error_handling(
-    req: &HttpRequest,
-    duration: Duration,
-) -> Result<AppConfig, HttpResponse> {
-    match load_config() {
-        Ok(config) => Ok(config),
-        Err(api_error) => {
-            let error_message = format!("Failed to load configuration: {api_error}");
-            Err(create_config_error_response(req, &error_message, duration))
-        },
-    }
 }
 
 /// Load database configuration
@@ -138,7 +123,7 @@ fn load_mfa_config() -> MfaConfig {
     }
 }
 
-/// Load WebAuthn configuration
+/// Load `WebAuthn` configuration
 fn load_webauthn_config() -> crate::types::WebauthnConfig {
     crate::types::WebauthnConfig {
         rp_id: env::var("WEBAUTHN_RP_ID").ok(),
@@ -214,10 +199,12 @@ fn validate_config(config: &AppConfig) -> Result<(), ApiError> {
 }
 
 /// Get bind address from configuration
+#[must_use]
 pub fn get_bind_address(config: &AppConfig) -> String {
     format!("{}:{}", config.server.host, config.server.port)
 }
 
+#[must_use]
 pub fn create_config_error_response(
     req: &HttpRequest,
     error_message: &str,
@@ -232,6 +219,14 @@ pub fn create_config_error_response(
     )
 }
 
+/// Load configuration with HTTP error handling.
+///
+/// Wraps `load_config()` and converts any `ApiError` into an HTTP response.
+///
+/// # Errors
+///
+/// Returns an `HttpResponse` with status 500 (Internal Server Error) if the configuration
+/// fails to load or validate (for example, missing `JWT_SECRET` or invalid values).
 pub fn load_config_with_error_handling(
     req: &HttpRequest,
     duration: Duration,
@@ -239,11 +234,12 @@ pub fn load_config_with_error_handling(
     match load_config() {
         Ok(config) => Ok(config),
         Err(api_error) => {
-            let error_message = format!("Failed to load configuration: {}", api_error);
+            let error_message = format!("Failed to load configuration: {api_error}");
             Err(create_config_error_response(req, &error_message, duration))
         },
     }
 }
+
 pub fn validate_config_on_startup() -> Result<AppConfig, String> {
     match load_config() {
         Ok(config) => {
