@@ -240,6 +240,16 @@ pub fn load_config_with_error_handling(
     }
 }
 
+/// Validate and load configuration on startup with console output.
+///
+/// Loads the application configuration and prints a summary to the console.
+/// This function is intended to be called during application startup.
+///
+/// # Errors
+///
+/// Returns a `String` error message if the configuration fails to load or validate,
+/// such as when required environment variables (like `JWT_SECRET`) are missing or
+/// when validation constraints aren't met.
 pub fn validate_config_on_startup() -> Result<AppConfig, String> {
     match load_config() {
         Ok(config) => {
@@ -253,8 +263,8 @@ pub fn validate_config_on_startup() -> Result<AppConfig, String> {
             Ok(config)
         },
         Err(api_error) => {
-            eprintln!("❌ Configuration error: {}", api_error);
-            Err(format!("Configuration validation failed: {}", api_error))
+            eprintln!("❌ Configuration error: {api_error}");
+            Err(format!("Configuration validation failed: {api_error}"))
         },
     }
 }
@@ -264,7 +274,7 @@ fn mask_sensitive_url(url: &str) -> String {
         let (before_at, after_at) = url.split_at(at_pos);
         if let Some(protocol_end) = before_at.find("://") {
             let protocol = &before_at[..protocol_end + 3];
-            format!("{}***{}", protocol, after_at)
+            format!("{protocol}***{after_at}")
         } else {
             "***".to_string()
         }
