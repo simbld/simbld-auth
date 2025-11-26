@@ -83,7 +83,7 @@ impl EmailMfaProvider {
         let mut code = String::new();
 
         for _ in 0..self.code_length {
-            code.push(char::from_digit(rng.gen_range(0..10) as u32, 10).unwrap());
+            code.push(char::from_digit(rng.random_range(0..10) as u32, 10).unwrap());
         }
 
         code
