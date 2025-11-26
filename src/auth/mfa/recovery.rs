@@ -144,29 +144,29 @@ impl RecoveryCodeProvider {
             let chunk = match self.character_set {
                 RecoveryCodeCharset::AlphaUpper => (0..remaining)
                     .map(|_| {
-                        let idx = rng.gen_range(0..26);
+                        let idx = rng.random_range(0..26);
                         (b'A' + idx) as char
                     })
                     .collect::<String>(),
                 RecoveryCodeCharset::AlphaLower => (0..remaining)
                     .map(|_| {
-                        let idx = rng.gen_range(0..26);
+                        let idx = rng.random_range(0..26);
                         (b'a' + idx) as char
                     })
                     .collect::<String>(),
                 RecoveryCodeCharset::AlphaMixed => (0..remaining)
                     .map(|_| {
                         if rng.gen_bool(0.5) {
-                            let idx = rng.gen_range(0..26);
+                            let idx = rng.random_range(0..26);
                             (b'A' + idx) as char
                         } else {
-                            let idx = rng.gen_range(0..26);
+                            let idx = rng.random_range(0..26);
                             (b'a' + idx) as char
                         }
                     })
                     .collect::<String>(),
                 RecoveryCodeCharset::Numeric => (0..remaining)
-                    .map(|_| char::from_digit(rng.gen_range(0..10), 10).unwrap())
+                    .map(|_| char::from_digit(rng.random_range(0..10), 10).unwrap())
                     .collect::<String>(),
                 RecoveryCodeCharset::Alphanumeric => {
                     (0..remaining).map(|_| rng.sample(Alphanumeric) as char).collect::<String>()
