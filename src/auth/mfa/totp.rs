@@ -5,13 +5,12 @@
 use base32::Alphabet;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Utc};
-use futures_util::TryFutureExt;
 use hmac::{Hmac, Mac};
 use qrcode::{render::svg, QrCode};
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
-use sqlx::{FromRow, Pool, Postgres, Row};
+use sqlx::{FromRow, Pool, Postgres};
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;

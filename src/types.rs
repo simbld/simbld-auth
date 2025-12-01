@@ -88,7 +88,7 @@ pub struct AppConfig {
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub host: String,
-    pub port: u16,
+    pub port: u32,
     pub workers: usize,
     pub keep_alive: Duration,
 }

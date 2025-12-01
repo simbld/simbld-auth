@@ -424,7 +424,7 @@ impl WebAuthnProvider {
     /// Delete a credential
     pub async fn delete_credential(
         &self,
-        credential_id: Uuid,
+        _credential_id: Uuid,
         user_id: Uuid,
     ) -> Result<(), ApiError> {
         // In a real application, you would delete the credential from your database
