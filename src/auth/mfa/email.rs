@@ -1,21 +1,29 @@
-//! # Email-based Multi-Factor Authentication
+//! Email-based Multi-Factor Authentication
 //!
-//! This module provides email-based verification for multi-factor authentication.
-//! It generates random codes, sends them via email, and verifies them.
+//! Implémentation avec stockage Postgres via `sqlx`. Les codes sont stockés
+//! sous forme hachée (sha256) pour éviter de conserver le code en clair.
 
 use crate::auth::mfa::MfaMethod;
+use crate::types::{ApiError, AppConfig};
 use async_trait::async_trait;
-use rand::Rng;
+use chrono::{DateTime, Utc};
+use rand::distr::Uniform;
+use rand::distributions::Uniform;
+use rand::prelude::Distribution;
+use rand::thread_rng;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-use crate::types::{ApiError, AppConfig};
-
 /// Provider for email-based MFA
 pub struct EmailMfaProvider {
+    /// Database pool
+    pool: PgPool,
+
     /// Email service client
-    email_client: Box<dyn EmailClient>,
+    email_client: Box<dyn EmailClient + Send + Sync>,
 
     /// Code expiration time in seconds
     expiration_seconds: u64,
@@ -30,14 +38,14 @@ pub struct EmailMfaProvider {
     sender_email: String,
 }
 
-/// Email verification code information
+/// Email verification code information (stocke le hash du code)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailCode {
     /// Unique identifier for this verification attempt
     pub id: Uuid,
 
-    /// The verification code (typically 6 digits)
-    pub code: String,
+    /// The verification code hash (sha256 hex)
+    pub code_hash: String,
 
     /// Email address the code was sent to
     pub email: String,
@@ -66,11 +74,16 @@ pub struct EmailMfaSettings {
 }
 
 impl EmailMfaProvider {
-    /// Create a new Email MFA provider
-    pub fn new(config: &AppConfig, email_client: Box<dyn EmailClient>) -> Self {
+    /// Create a new Email MFA provider (note: now prend `pool`)
+    pub fn new(
+        config: &AppConfig,
+        pool: PgPool,
+        email_client: Box<dyn EmailClient + Send + Sync>,
+    ) -> Self {
         Self {
+            pool,
             email_client,
-            expiration_seconds: config.mfa.email_code_expiration_seconds, // Already has default in MfaConfig
+            expiration_seconds: config.mfa.email_code_expiration_seconds,
             code_length: config.mfa.email_code_length,
             email_subject: config.mfa.email_subject.clone(),
             sender_email: config.mfa.sender_email.clone(),
@@ -79,36 +92,46 @@ impl EmailMfaProvider {
 
     /// Generate a random verification code
     fn generate_code(&self) -> String {
-        let mut rng = rand::rng();
-        let mut code = String::new();
+        let mut rng = thread_rng();
+        let dist = Uniform::from(0..10);
+        (0..self.code_length).map(|_| dist.sample(&mut rng).to_string()).collect()
+    }
 
-        for _ in 0..self.code_length {
-            code.push(char::from_digit(rng.random_range(0..10) as u32, 10).unwrap());
-        }
-
-        code
+    fn hash_code(code: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(code.as_bytes());
+        hex::encode(hasher.finalize())
     }
 
     /// Create a new verification code and send it via email
     pub async fn create_verification(&self, email: &str) -> Result<Uuid, ApiError> {
-        // Generate verification code
+        // Generate verification code (plaintext for email only)
         let code = self.generate_code();
         let id = Uuid::new_v4();
         let now = SystemTime::now();
         let expires_at = now + Duration::from_secs(self.expiration_seconds);
 
-        // Create code record (would typically be stored in a database)
-        let email_code = EmailCode {
-            id,
-            code: code.clone(),
-            email: email.to_string(),
-            created_at: now,
-            expires_at,
-            used: false,
-        };
+        // Hash the code before storing
+        let code_hash = Self::hash_code(&code);
 
-        // Store code in database (this would be an actual DB call in a real app)
-        self.store_code(&email_code).await?;
+        // Store code in database
+        let created_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(now);
+        let expires_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(expires_at);
+        sqlx::query!(
+            r#"
+            INSERT INTO email_mfa_codes (id, code_hash, email, created_at, expires_at, used)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            id,
+            code_hash,
+            email,
+            created_at_chrono,
+            expires_at_chrono,
+            false
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB insert failed: {}", e)))?;
 
         // Prepare email body
         let minutes = self.expiration_seconds / 60;
@@ -127,61 +150,157 @@ impl EmailMfaProvider {
     }
 
     /// Verify a code
-    pub async fn verify_code(&self, verification_id: Uuid, code: &str) -> Result<bool, ApiError> {
-        // Retrieve code from database (this would be a DB call in a real app)
-        let email_code = self.get_code(verification_id).await?;
+    pub async fn verify_code(
+        &self,
+        verification_id: Uuid,
+        provided_code: &str,
+    ) -> Result<bool, ApiError> {
+        // Retrieve code record from database
+        let row = sqlx::query!(
+            r#"
+            SELECT id, code_hash, email, created_at, expires_at, used
+            FROM email_mfa_codes
+            WHERE id = $1
+            "#,
+            verification_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB query failed: {}", e)))?;
 
-        // Check if code is expired
+        let rec = match row {
+            Some(r) => r,
+            None => return Ok(false),
+        };
+
+        // Convert chrono times to SystemTime
+        let expires_at: SystemTime =
+            DateTime::<Utc>::from_utc(rec.expires_at.naive_utc(), Utc).into();
+
+        // Check expiry
         let now = SystemTime::now();
-        if email_code.expires_at < now {
+        if expires_at < now {
             return Ok(false);
         }
 
-        // Check if code has already been used
-        if email_code.used {
+        // Check if already used
+        if rec.used {
             return Ok(false);
         }
 
-        // Check if code matches
-        if email_code.code != code {
+        // Compare hashes
+        let provided_hash = Self::hash_code(provided_code);
+        if provided_hash != rec.code_hash {
             return Ok(false);
         }
 
-        // Mark code as used
-        self.mark_code_used(verification_id).await?;
+        // Mark used
+        sqlx::query!(
+            r#"
+            UPDATE email_mfa_codes
+            SET used = true, used_at = $2
+            WHERE id = $1
+            "#,
+            verification_id,
+            DateTime::<Utc>::from(now)
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB update failed: {}", e)))?;
 
         Ok(true)
     }
 
-    /// Store code in database (placeholder for actual DB implementation)
+    /// Store code in database (compatibility wrapper)
     async fn store_code(&self, code: &EmailCode) -> Result<(), ApiError> {
-        // In a real application, you would store the code in your database
-        // For this example, we just pretend it's stored
+        let created_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(code.created_at);
+        let expires_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(code.expires_at);
+        sqlx::query!(
+            r#"
+            INSERT INTO email_mfa_codes (id, code_hash, email, created_at, expires_at, used)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            code.id,
+            code.code_hash,
+            code.email,
+            created_at_chrono,
+            expires_at_chrono,
+            code.used
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB insert failed: {}", e)))?;
         Ok(())
     }
 
-    /// Get code from database (placeholder for actual DB implementation)
+    /// Get code from database (renvoie EmailCode avec code_hash)
     async fn get_code(&self, id: Uuid) -> Result<EmailCode, ApiError> {
-        // In a real application, you would retrieve the code from your database
-        // For this example, we return an error since we don't have a real database
-        Err(ApiError::new(404, "Code not found".to_string()))
+        let row = sqlx::query!(
+            r#"
+            SELECT id, code_hash, email, created_at, expires_at, used
+            FROM email_mfa_codes
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB query failed: {}", e)))?;
+
+        let r = row.ok_or_else(|| ApiError::new(404, "Code not found".to_string()))?;
+
+        let created_at: SystemTime =
+            DateTime::<Utc>::from_utc(r.created_at.naive_utc(), Utc).into();
+        let expires_at: SystemTime =
+            DateTime::<Utc>::from_utc(r.expires_at.naive_utc(), Utc).into();
+
+        Ok(EmailCode {
+            id: r.id,
+            code_hash: r.code_hash,
+            email: r.email,
+            created_at,
+            expires_at,
+            used: r.used,
+        })
     }
 
-    /// Mark code as used (placeholder for actual DB implementation)
+    /// Mark code as used
     async fn mark_code_used(&self, id: Uuid) -> Result<(), ApiError> {
-        // In a real application, you would update the code in your database
-        // For this example, we just pretend it's updated
+        let now = SystemTime::now();
+        sqlx::query!(
+            r#"
+            UPDATE email_mfa_codes
+            SET used = true, used_at = $2
+            WHERE id = $1
+            "#,
+            id,
+            DateTime::<Utc>::from(now)
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB update failed: {}", e)))?;
         Ok(())
     }
 
-    /// Create Email MFA settings for a user
+    /// Create Email MFA settings for a user (upsert)
     pub async fn create_settings(
         &self,
         user_id: Uuid,
         email: &str,
     ) -> Result<EmailMfaSettings, ApiError> {
-        // In a real application, you would store these settings in your database
-        // For this example, we just return the settings
+        sqlx::query!(
+            r#"
+            INSERT INTO email_mfa_settings (user_id, email, enabled)
+            VALUES ($1, $2, true)
+            ON CONFLICT (user_id) DO UPDATE SET email = EXCLUDED.email, enabled = true
+            "#,
+            user_id,
+            email
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB upsert failed: {}", e)))?;
+
         Ok(EmailMfaSettings {
             user_id,
             email: email.to_string(),
@@ -191,22 +310,58 @@ impl EmailMfaProvider {
 
     /// Get Email MFA settings for a user
     pub async fn get_settings(&self, user_id: Uuid) -> Result<Option<EmailMfaSettings>, ApiError> {
-        // In a real application, you would retrieve these settings from your database
-        // For this example, we return None since we don't have a real database
-        Ok(None)
+        let row = sqlx::query!(
+            r#"
+            SELECT user_id, email, enabled
+            FROM email_mfa_settings
+            WHERE user_id = $1
+            "#,
+            user_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB query failed: {}", e)))?;
+
+        if let Some(r) = row {
+            Ok(Some(EmailMfaSettings {
+                user_id: r.user_id,
+                email: r.email,
+                enabled: r.enabled,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Update Email MFA settings for a user
     pub async fn update_settings(&self, settings: &EmailMfaSettings) -> Result<(), ApiError> {
-        // In a real application, you would update these settings in your database
-        // For this example, we just pretend they're updated
+        sqlx::query!(
+            r#"
+            UPDATE email_mfa_settings
+            SET email = $2, enabled = $3
+            WHERE user_id = $1
+            "#,
+            settings.user_id,
+            settings.email,
+            settings.enabled
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB update failed: {}", e)))?;
         Ok(())
     }
 
     /// Delete Email MFA settings for a user
     pub async fn delete_settings(&self, user_id: Uuid) -> Result<(), ApiError> {
-        // In a real application, you would delete these settings from your database
-        // For this example, we just pretend they're deleted
+        sqlx::query!(
+            r#"
+            DELETE FROM email_mfa_settings WHERE user_id = $1
+            "#,
+            user_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::new(500, format!("DB delete failed: {}", e)))?;
         Ok(())
     }
 }
@@ -215,29 +370,22 @@ impl EmailMfaProvider {
 #[async_trait]
 impl MfaMethod for EmailMfaProvider {
     async fn initiate_verification(&self, user_id: Uuid) -> Result<String, ApiError> {
-        // Get user's email from settings
         let settings = self.get_settings(user_id).await?.ok_or_else(|| {
             ApiError::new(404, "Email MFA not configured for this user".to_string())
         })?;
 
-        // Create verification
         let verification_id = self.create_verification(&settings.email).await?;
-
-        // Return verification ID as a string
         Ok(verification_id.to_string())
     }
 
     async fn complete_verification(
         &self,
-        user_id: Uuid,
+        _user_id: Uuid,
         verification_id: &str,
         code: &str,
     ) -> Result<bool, ApiError> {
-        // Convert verification ID from string to UUID
         let verification_uuid = Uuid::parse_str(verification_id)
             .map_err(|_| ApiError::new(400, "Invalid verification ID".to_string()))?;
-
-        // Verify code
         self.verify_code(verification_uuid, code).await
     }
 
@@ -296,104 +444,44 @@ impl EmailClient for SmtpEmailClient {
         subject: &str,
         body: &str,
     ) -> Result<(), String> {
-        // In a real implementation, you would use a library like lettre to send emails
-        // For this example, we just log the message
         log::info!("Sending email from {} to {} with subject '{}': {}", from, to, subject, body);
-
         Ok(())
     }
 }
 
-/// AWS SES email client implementation
-/// TODO: Re-enable when AWS SDK is configured
+/// AWS SES email client (désactivé si non configuré)
 #[allow(dead_code)]
 pub struct AwsSesEmailClient {
     region: String,
-    // credentials: aws_sdk_sesv2::config::Credentials,
-    // client: Option<aws_sdk_sesv2::Client>,
 }
 
 impl AwsSesEmailClient {
-    /// Create a new AWS SES email client
-    /// TODO: Re-enable when AWS SDK is configured
     #[allow(unused_variables)]
-    pub fn new(region: String, access_key: String, secret_key: String) -> Self {
-        // let credentials = aws_sdk_sesv2::config::Credentials::new(
-        //     access_key,
-        //     secret_key,
-        //     None,
-        //     None,
-        //     "rust-auth-lib",
-        // );
-
+    pub fn new(region: String, _access_key: String, _secret_key: String) -> Self {
         Self {
             region,
-            // credentials,
-            // client: None,
         }
-    }
-
-    /// Initialize the AWS SES client
-    /// TODO: Re-enable when AWS SDK is configured
-    #[allow(dead_code)]
-    async fn init_client(&mut self) -> Result<(), String> {
-        // if self.client.is_none() {
-        //     let config = aws_config::ConfigLoader::default()
-        //         .region(aws_sdk_sesv2::config::Region::new(self.region.clone()))
-        //         .credentials_provider(self.credentials.clone())
-        //         .load()
-        //         .await;
-        //     self.client = Some(aws_sdk_sesv2::Client::new(&config));
-        // }
-        Ok(())
     }
 }
 
 #[async_trait]
 impl EmailClient for AwsSesEmailClient {
-    /// TODO: Re-enable when AWS SDK is configured
     #[allow(unused_variables)]
     async fn send_email(
         &self,
-        from: &str,
-        to: &str,
-        subject: &str,
-        body: &str,
+        _from: &str,
+        _to: &str,
+        _subject: &str,
+        _body: &str,
     ) -> Result<(), String> {
-        // TODO: AWS SES implementation temporarily disabled
         Err("AWS SES not configured".to_string())
-
-        // let mut this = self.clone();
-        // this.init_client().await?;
-        // let client = this.client.as_ref().unwrap();
-        // let destination = aws_sdk_sesv2::model::Destination::builder().to_addresses(to).build();
-        // let subject_content = aws_sdk_sesv2::model::Content::builder().data(subject).charset("UTF-8").build();
-        // let body_content = aws_sdk_sesv2::model::Content::builder().data(body).charset("UTF-8").build();
-        // let message_body = aws_sdk_sesv2::model::Body::builder().text(body_content).build();
-        // let message = aws_sdk_sesv2::model::Message::builder()
-        //     .subject(subject_content)
-        //     .body(message_body)
-        //     .build();
-        // let resp = client
-        //     .send_email()
-        //     .from_email_address(from)
-        //     .destination(destination)
-        //     .content(aws_sdk_sesv2::model::EmailContent::builder().simple(message).build())
-        //     .send()
-        //     .await
-        //     .map_err(|e| format!("Failed to send email via AWS SES: {}", e))?;
-        // log::debug!("Email sent with message ID: {:?}", resp.message_id());
-        // Ok(())
     }
 }
 
-// Implement Clone for AwsSesEmailClient
 impl Clone for AwsSesEmailClient {
     fn clone(&self) -> Self {
         Self {
             region: self.region.clone(),
-            // credentials: self.credentials.clone(),
-            // client: None,
         }
     }
 }
@@ -401,7 +489,9 @@ impl Clone for AwsSesEmailClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::postgres::PgPoolOptions;
     use std::sync::{Arc, Mutex};
+    use tokio::runtime::Runtime;
 
     // Mock implementation of EmailClient for testing
     #[derive(Clone)]
@@ -436,26 +526,32 @@ mod tests {
                 subject.to_string(),
                 body.to_string(),
             ));
-
             Ok(())
         }
     }
 
     #[test]
     fn test_generate_code_length() {
-        // Arrange
-        let provider = EmailMfaProvider {
-            email_client: Box::new(MockEmailClient::new()),
-            expiration_seconds: 300,
-            code_length: 6,
-            email_subject: "Test".to_string(),
-            sender_email: "test@example.com".to_string(),
-        };
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            // Create a temporary in-memory pool is complicated; for testing generation only we can use a dummy pool
+            // Use a real PgPool only if test DB is configured; here we just build a provider with a placeholder pool
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect_lazy("postgres://localhost/testdb")
+                .unwrap();
 
-        // Act
-        let code = provider.generate_code();
+            let provider = EmailMfaProvider {
+                pool,
+                email_client: Box::new(MockEmailClient::new()),
+                expiration_seconds: 300,
+                code_length: 6,
+                email_subject: "Test".to_string(),
+                sender_email: "test@example.com".to_string(),
+            };
 
-        // Assert
-        assert_eq!(code.len(), 6, "Le code généré devrait avoir 6 caractères");
+            let code = provider.generate_code();
+            assert_eq!(code.len(), 6, "Le code généré devrait avoir 6 caractères");
+        });
     }
 }
