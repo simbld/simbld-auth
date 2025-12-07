@@ -1,3 +1,4 @@
+// rust
 //! Email-based Multi-Factor Authentication
 //!
 //! Implémentation avec stockage Postgres via `sqlx`. Les codes sont stockés
@@ -7,10 +8,9 @@ use crate::auth::mfa::MfaMethod;
 use crate::types::{ApiError, AppConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use rand::distr::Uniform;
-use rand::distributions::Uniform;
-use rand::prelude::Distribution;
-use rand::thread_rng;
+use rand::distr::{Distribution, Uniform};
+use rand::distributions::Distribution;
+use rand::{distributions::Uniform, thread_rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -173,9 +173,9 @@ impl EmailMfaProvider {
             None => return Ok(false),
         };
 
-        // Convert chrono times to SystemTime
+        // Convert chrono times to SystemTime using non déprécié
         let expires_at: SystemTime =
-            DateTime::<Utc>::from_utc(rec.expires_at.naive_utc(), Utc).into();
+            DateTime::from_naive_utc_and_offset(rec.expires_at.naive_utc(), Utc).into();
 
         // Check expiry
         let now = SystemTime::now();
@@ -250,9 +250,9 @@ impl EmailMfaProvider {
         let r = row.ok_or_else(|| ApiError::new(404, "Code not found".to_string()))?;
 
         let created_at: SystemTime =
-            DateTime::<Utc>::from_utc(r.created_at.naive_utc(), Utc).into();
+            DateTime::from_naive_utc_and_offset(r.created_at.naive_utc(), Utc).into();
         let expires_at: SystemTime =
-            DateTime::<Utc>::from_utc(r.expires_at.naive_utc(), Utc).into();
+            DateTime::from_naive_utc_and_offset(r.expires_at.naive_utc(), Utc).into();
 
         Ok(EmailCode {
             id: r.id,
@@ -534,8 +534,6 @@ mod tests {
     fn test_generate_code_length() {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            // Create a temporary in-memory pool is complicated; for testing generation only we can use a dummy pool
-            // Use a real PgPool only if test DB is configured; here we just build a provider with a placeholder pool
             let pool = PgPoolOptions::new()
                 .max_connections(1)
                 .connect_lazy("postgres://localhost/testdb")
