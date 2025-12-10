@@ -9,8 +9,8 @@ use crate::types::{ApiError, AppConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rand::distr::{Distribution, Uniform};
-use rand::distributions::Distribution;
-use rand::{distributions::Uniform, thread_rng};
+use rand::distributions::{Distribution, Uniform};
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -93,8 +93,8 @@ impl EmailMfaProvider {
     /// Generate a random verification code
     fn generate_code(&self) -> String {
         let mut rng = thread_rng();
-        let dist = Uniform::from(0..10);
-        (0..self.code_length).map(|_| dist.sample(&mut rng).to_string()).collect()
+        let dist = Uniform::new(0, 10);
+        (0..self.code_length).map(|_| dist.expect("REASON").sample(&mut rng).to_string()).collect()
     }
 
     fn hash_code(code: &str) -> String {
