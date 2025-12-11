@@ -156,7 +156,7 @@ impl RecoveryCodeProvider {
                     .collect::<String>(),
                 RecoveryCodeCharset::AlphaMixed => (0..remaining)
                     .map(|_| {
-                        if rng.gen_bool(0.5) {
+                        if rng.random_bool(0.5) {
                             let idx = rng.random_range(0..26);
                             (b'A' + idx) as char
                         } else {
@@ -300,7 +300,7 @@ pub struct RecoveryVerification {
 /// Implementation of MfaMethod for recovery codes
 #[async_trait]
 impl MfaMethod for RecoveryCodeProvider {
-    async fn initiate_verification(&self, user_id: Uuid) -> Result<String, ApiError> {
+    async fn initiate_verification(&self, _user_id: Uuid) -> Result<String, ApiError> {
         // For recovery codes, there's no initiation step like sending a code
         // We just return a placeholder since the user already has the codes
         Ok("recovery_verification".to_string())
