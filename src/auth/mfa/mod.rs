@@ -213,8 +213,8 @@ impl MfaService {
     ///
     /// Returns `MfaError` if not yet implemented.
     pub fn get_available_methods(
-        pool: &Pool<Postgres>,
-        user_id: Uuid,
+        _pool: &Pool<Postgres>,
+        _user_id: Uuid,
     ) -> Result<Vec<MfaType>, MfaError> {
         // TODO: Reimplement with sqlx
         Err(MfaError::DatabaseError("Not implemented".to_string()))
