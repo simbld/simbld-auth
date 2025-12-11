@@ -110,8 +110,7 @@ impl WebAuthnProvider {
             config.webauthn.rp_name.clone().unwrap_or_else(|| "Example Application".to_string());
         let rp_origin =
             config.webauthn.rp_origin.clone().unwrap_or_else(|| "https://example.com".to_string());
-        let rp_origin_url =
-            url::Url::parse(&rp_origin).map_err(|_| WebauthnError::Configuration)?;
+        let rp_origin_url = Url::parse(&rp_origin).map_err(|_| WebauthnError::Configuration)?;
 
         let builder = WebauthnBuilder::new(&rp_id, &rp_origin_url)?.rp_name(&rp_name);
 
@@ -140,7 +139,7 @@ impl WebAuthnProvider {
                 ApiError::new(500, format!("Failed to start WebAuthn registration: {}", e))
             })?;
 
-        // Create challenge record
+        // Create a challenge record
         let challenge_id = Uuid::new_v4();
         let now = Utc::now();
         let expires_at = now + chrono::Duration::minutes(5);
@@ -185,7 +184,7 @@ impl WebAuthnProvider {
             .finish_passkey_registration(response, state)
             .map_err(|e| ApiError::new(400, format!("Invalid registration response: {}", e)))?;
 
-        // Create credential record
+        // Create a credential record
         let credential = WebAuthnCredential {
             id: Uuid::new_v4(),
             user_id: challenge.user_id,
@@ -230,7 +229,7 @@ impl WebAuthnProvider {
                 ApiError::new(500, format!("Failed to start WebAuthn authentication: {}", e))
             })?;
 
-        // Create challenge record
+        // Create a challenge record
         let challenge_id = Uuid::new_v4();
         let now = Utc::now();
         let expires_at = now + chrono::Duration::minutes(5);
@@ -305,7 +304,7 @@ impl WebAuthnProvider {
     }
 
     /// Get user's Passkey objects
-    async fn get_user_passkeys(&self, user_id: Uuid) -> Result<Vec<Passkey>, ApiError> {
+    async fn get_user_passkeys(&self, _user_id: Uuid) -> Result<Vec<Passkey>, ApiError> {
         // In a real app, you would fetch Passkey objects from your database
         // For this example; we return an empty list
         Ok(Vec::new())
@@ -314,7 +313,7 @@ impl WebAuthnProvider {
     /// Store a registration challenge (placeholder for actual DB implementation)
     async fn store_registration_challenge(
         &self,
-        challenge: &WebAuthnRegistrationChallenge,
+        _challenge: &WebAuthnRegistrationChallenge,
     ) -> Result<(), ApiError> {
         // In a real application, you would store the challenge in your database
         // For this example; we just pretend it's stored
@@ -324,7 +323,7 @@ impl WebAuthnProvider {
     /// Get a registration challenge (placeholder for actual DB implementation)
     async fn get_registration_challenge(
         &self,
-        id: Uuid,
+        _id: Uuid,
     ) -> Result<WebAuthnRegistrationChallenge, ApiError> {
         // In a real application, you would retrieve the challenge from your database
         // For this example; we return an error since we don't have a real database
@@ -332,7 +331,7 @@ impl WebAuthnProvider {
     }
 
     /// Delete a registration challenge (placeholder for actual DB implementation)
-    async fn delete_registration_challenge(&self, id: Uuid) -> Result<(), ApiError> {
+    async fn delete_registration_challenge(&self, _id: Uuid) -> Result<(), ApiError> {
         // In a real application, you would delete the challenge from your database
         // For this example; we just pretend it's deleted
         Ok(())
@@ -341,7 +340,7 @@ impl WebAuthnProvider {
     /// Store an authentication challenge (placeholder for actual DB implementation)
     async fn store_authentication_challenge(
         &self,
-        challenge: &WebAuthnAuthenticationChallenge,
+        _challenge: &WebAuthnAuthenticationChallenge,
     ) -> Result<(), ApiError> {
         // In a real application, you would store the challenge in your database
         // For this example; we just pretend it's stored
@@ -351,7 +350,7 @@ impl WebAuthnProvider {
     /// Get an authentication challenge (placeholder for actual DB implementation)
     async fn get_authentication_challenge(
         &self,
-        id: Uuid,
+        _id: Uuid,
     ) -> Result<WebAuthnAuthenticationChallenge, ApiError> {
         // In a real application, you would retrieve the challenge from your database
         // For this example; we return an error since we don't have a real database
@@ -359,14 +358,14 @@ impl WebAuthnProvider {
     }
 
     /// Delete an authentication challenge (placeholder for actual DB implementation)
-    async fn delete_authentication_challenge(&self, id: Uuid) -> Result<(), ApiError> {
+    async fn delete_authentication_challenge(&self, _id: Uuid) -> Result<(), ApiError> {
         // In a real application, you would delete the challenge from your database
         // For this example; we just pretend it's deleted
         Ok(())
     }
 
     /// Store a credential (placeholder for actual DB implementation)
-    async fn store_credential(&self, credential: &WebAuthnCredential) -> Result<(), ApiError> {
+    async fn store_credential(&self, _credential: &WebAuthnCredential) -> Result<(), ApiError> {
         // In a real application, you would store the credential in your database
         // For this example; we just pretend it's stored
         Ok(())
@@ -375,7 +374,7 @@ impl WebAuthnProvider {
     /// Get a credential by its ID (placeholder for actual DB implementation)
     async fn get_credential_by_id(
         &self,
-        credential_id: &[u8],
+        _credential_id: &[u8],
     ) -> Result<Option<WebAuthnCredential>, ApiError> {
         // In a real application, you would retrieve the credential from your database
         // For this example; we return None since we don't have a real database
@@ -390,7 +389,7 @@ impl WebAuthnProvider {
     ) -> Result<(), ApiError> {
         // In a real application, you would update the credential in your database
         log::debug!("Updating counter for credential {} to {new_counter}", credential.id);
-        // For this example; we just pretend it's updated
+        // For this example, we just pretend it's updated
         Ok(())
     }
 
@@ -417,7 +416,7 @@ impl WebAuthnProvider {
     ) -> Result<Vec<WebAuthnCredential>, ApiError> {
         // In a real application, you would retrieve credentials from your database
         log::debug!("Getting credentials for user {user_id}");
-        // For this example; we return an empty list since we don't have a real database
+        // For this example, we return an empty list since we don't have a real database
         Ok(Vec::new())
     }
 
