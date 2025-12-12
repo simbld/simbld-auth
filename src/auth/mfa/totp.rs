@@ -449,7 +449,7 @@ impl TotpService {
         let mut codes = Vec::with_capacity(count);
 
         for _ in 0..count {
-            let code: String = (0..8).map(|_| rng.gen_range(0..10).to_string()).collect();
+            let code: String = (0..8).map(|_| rng.random_range(0..10).to_string()).collect();
             codes.push(code);
         }
 
