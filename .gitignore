@@ -39,8 +39,9 @@ Cargo.lock
 # production
 /build
 
-# installation
+# cmd
 INSTALL.md
+PSQL.md
 
 # misc
 .DS_Store
