@@ -220,6 +220,8 @@ impl RecoveryCodeProvider {
             last_generated: now,
         };
 
+        log::info!("New recovery codes generated and settings initialized: {:?}", settings);
+
         // In a real app, you would store these settings in your database
 
         Ok(())
