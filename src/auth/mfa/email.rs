@@ -74,6 +74,7 @@ pub struct EmailMfaSettings {
 
 impl EmailMfaProvider {
     /// Create a new Email MFA provider (note: now prend `pool`)
+    #[must_use]
     pub fn new(
         config: &AppConfig,
         pool: PgPool,
@@ -113,7 +114,7 @@ impl EmailMfaProvider {
         // Hash the code before storing
         let code_hash = Self::hash_code(&code);
 
-        // Store code in database
+        // Store code in a database
         let created_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(now);
         let expires_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(expires_at);
         sqlx::query!(
@@ -130,7 +131,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB insert failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB insert failed: {e}")))?;
 
         // Prepare email body
         let minutes = self.expiration_seconds / 60;
@@ -143,7 +144,7 @@ impl EmailMfaProvider {
         self.email_client
             .send_email(&self.sender_email, email, &self.email_subject, &body)
             .await
-            .map_err(|e| ApiError::new(500, format!("Failed to send email: {}", e)))?;
+            .map_err(|e| ApiError::new(500, format!("Failed to send email: {e}")))?;
 
         Ok(id)
     }
@@ -165,7 +166,7 @@ impl EmailMfaProvider {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB query failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB query failed: {e}")))?;
 
         let rec = match row {
             Some(r) => r,
@@ -174,7 +175,7 @@ impl EmailMfaProvider {
 
         // Convert chrono times to SystemTime using non déprécié
         let expires_at: SystemTime =
-            DateTime::from_naive_utc_and_offset(rec.expires_at.naive_utc(), Utc).into();
+            DateTime::<Utc>::from_naive_utc_and_offset(rec.expires_at.naive_utc(), Utc).into();
 
         // Check expiry
         let now = SystemTime::now();
@@ -205,7 +206,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB update failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB update failed: {e}")))?;
 
         Ok(true)
     }
@@ -228,7 +229,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB insert failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB insert failed: {e}")))?;
         Ok(())
     }
 
@@ -244,14 +245,14 @@ impl EmailMfaProvider {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB query failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB query failed: {e}")))?;
 
         let r = row.ok_or_else(|| ApiError::new(404, "Code not found".to_string()))?;
 
         let created_at: SystemTime =
-            DateTime::from_naive_utc_and_offset(r.created_at.naive_utc(), Utc).into();
+            DateTime::<Utc>::from_naive_utc_and_offset(r.created_at.naive_utc(), Utc).into();
         let expires_at: SystemTime =
-            DateTime::from_naive_utc_and_offset(r.expires_at.naive_utc(), Utc).into();
+            DateTime::<Utc>::from_naive_utc_and_offset(r.expires_at.naive_utc(), Utc).into();
 
         Ok(EmailCode {
             id: r.id,
@@ -277,7 +278,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB update failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB update failed: {e}")))?;
         Ok(())
     }
 
@@ -298,7 +299,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB upsert failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB upsert failed: {e}")))?;
 
         Ok(EmailMfaSettings {
             user_id,
@@ -319,7 +320,7 @@ impl EmailMfaProvider {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB query failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB query failed: {e}")))?;
 
         if let Some(r) = row {
             Ok(Some(EmailMfaSettings {
@@ -346,7 +347,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB update failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB update failed: {e}")))?;
         Ok(())
     }
 
@@ -360,7 +361,7 @@ impl EmailMfaProvider {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| ApiError::new(500, format!("DB delete failed: {}", e)))?;
+        .map_err(|e| ApiError::new(500, format!("DB delete failed: {e}")))?;
         Ok(())
     }
 }
