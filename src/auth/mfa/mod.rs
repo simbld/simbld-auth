@@ -105,8 +105,8 @@ impl MfaService {
     /// # Errors
     ///
     /// Returns `MfaError` if not yet implemented.
-    pub fn get_mfa_status(pool: &Pool<Postgres>, user_id: Uuid) -> Result<MfaStatus, MfaError> {
-        // TODO: Reimplement with sqlx
+    pub fn get_mfa_status(user_id: Uuid) -> Result<MfaStatus, MfaError> {
+        log::debug!("Fetching MFA status for user {user_id}");
         Err(MfaError::DatabaseError("Not implemented".to_string()))
     }
 
@@ -118,18 +118,21 @@ impl MfaService {
     pub async fn verify_authentication(
         pool: &Pool<Postgres>,
         user_id: Uuid,
-        mfa_type: &MfaType,
+        mfa_type: MfaType,
         code: &str,
     ) -> Result<bool, MfaError> {
         match mfa_type {
-            &MfaType::Totp => TotpService::verify_authentication(pool, user_id, code)
+            MfaType::Totp => TotpService::verify_authentication(pool, user_id, code)
                 .await
                 .map_err(MfaError::from),
-            &MfaType::BackupCode => {
+            MfaType::BackupCode => {
                 BackupCodeService::verify_code(pool, user_id, code).await.map_err(MfaError::from)
             },
-            // Other methods not yet implemented
-            _ => Err(MfaError::VerificationFailed),
+
+            _ => {
+                log::debug!("Attempted verification with unimplemented method {mfa_type}");
+                Err(MfaError::VerificationFailed)
+            },
         }
     }
 
@@ -141,11 +144,11 @@ impl MfaService {
     ///
     /// Returns `MfaError` if not yet implemented.
     pub fn is_mfa_required(
-        pool: &Pool<Postgres>,
+        _pool: &Pool<Postgres>,
         user_id: Uuid,
         policy: &MfaPolicy,
     ) -> Result<bool, MfaError> {
-        // TODO: Reimplement with sqlx
+        log::debug!("Checking MFA requirement for user {user_id} with policy {policy:?}");
         Err(MfaError::DatabaseError("Not implemented".to_string()))
     }
 
@@ -157,13 +160,11 @@ impl MfaService {
     ///
     /// Returns `MfaError` if not yet implemented.
     pub fn enable_mfa(
-        pool: &Pool<Postgres>,
+        _pool: &Pool<Postgres>,
         user_id: Uuid,
-        mfa_type: &MfaType,
+        mfa_type: MfaType,
     ) -> Result<(), MfaError> {
-        // TODO: Reimplement with sqlx
-        let _mfa_type_str = format!("{mfa_type:?}");
-        log::debug!("Enabling MFA type {_mfa_type_str} for user {user_id}");
+        log::debug!("Enabl MFA type {mfa_type} for user {user_id}");
         Err(MfaError::DatabaseError("Not implemented".to_string()))
     }
 
@@ -174,19 +175,16 @@ impl MfaService {
     /// # Errors
     ///
     /// Returns `MfaError` if not yet implemented.
-    #[allow(dead_code, unused_variables, clippy::needless_pass_by_value)]
     pub fn disable_mfa(
-        pool: &Pool<Postgres>,
+        _pool: &Pool<Postgres>,
         user_id: Uuid,
-        mfa_type: &MfaType,
+        mfa_type: MfaType,
     ) -> Result<(), MfaError> {
-        // TODO: Reimplement with sqlx
-        let _mfa_type_str = format!("{mfa_type:?}");
-        log::debug!("Disabling MFA type {_mfa_type_str} for user {user_id}");
+        log::debug!("Disabling MFA type {mfa_type} for user {user_id}");
         Err(MfaError::DatabaseError("Not implemented".to_string()))
     }
 
-    /// Record a successful MFA verification
+    /// Record successful MFA verification
     ///
     /// TODO: Fix - needs proper `sqlx` implementation
     ///
@@ -201,7 +199,7 @@ impl MfaService {
     ) -> Result<(), MfaError> {
         // TODO: Reimplement with sqlx
         let _mfa_type_str = format!("{mfa_type:?}");
-        log::debug!("Recording verification for user {user_id} with MFA type {_mfa_type_str}");
+        log::debug!("Recording verification for user {user_id} with MFA type {mfa_type}");
         Err(MfaError::DatabaseError("Not implemented".to_string()))
     }
 
