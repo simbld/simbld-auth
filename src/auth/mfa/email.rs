@@ -155,7 +155,7 @@ impl EmailMfaProvider {
         verification_id: Uuid,
         provided_code: &str,
     ) -> Result<bool, ApiError> {
-        // Retrieve code record from database
+        // Retrieve code record from a database
         let row = sqlx::query!(
             r#"
             SELECT id, code_hash, email, created_at, expires_at, used
