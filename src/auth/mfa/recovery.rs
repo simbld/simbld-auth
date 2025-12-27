@@ -26,7 +26,7 @@ pub struct RecoveryCodeProvider {
     /// Whether to separate code into chunks with hyphens
     use_separators: bool,
 
-    /// Character set to use for codes
+    /// Character set to use it for codes
     character_set: RecoveryCodeCharset,
 
     /// Argon2 configuration for hashing codes
@@ -92,6 +92,7 @@ pub struct RecoveryCodeSettings {
 
 impl RecoveryCodeProvider {
     /// Create a new recovery code provider
+    #[must_use]
     pub fn new(config: &AppConfig) -> Self {
         Self {
             code_count: config.mfa.recovery_code_count,
@@ -103,6 +104,10 @@ impl RecoveryCodeProvider {
     }
 
     /// Generate a set of recovery codes for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if code generation, hashing, or storage fails.
     pub async fn generate_codes(&self, user_id: Uuid) -> Result<Vec<String>, ApiError> {
         let mut codes = Vec::with_capacity(self.code_count);
 
@@ -122,61 +127,58 @@ impl RecoveryCodeProvider {
 
     /// Generate a single recovery code
     fn generate_single_code(&self) -> String {
-        let mut rng = rand::rng();
         let chunk_size = if self.use_separators {
             4
         } else {
             self.code_length
         };
-        let num_chunks = (self.code_length + chunk_size - 1) / chunk_size;
-
+        let num_chunks = self.code_length.div_ceil(chunk_size);
+        let mut rng = rand::rng();
         let mut code = String::new();
 
         for i in 0..num_chunks {
-            // For the last chunk, calculate remaining characters
-            let remaining = if i == num_chunks - 1 && self.code_length % chunk_size != 0 {
+            let remaining = if i == num_chunks - 1 && !self.code_length.is_multiple_of(chunk_size) {
                 self.code_length % chunk_size
             } else {
                 chunk_size
             };
 
-            // Generate chunk based on chosen character set
-            let chunk = match self.character_set {
-                RecoveryCodeCharset::AlphaUpper => (0..remaining)
-                    .map(|_| (b'A' + rng.random_range(0..26)) as char)
-                    .collect::<String>(),
-                RecoveryCodeCharset::AlphaLower => (0..remaining)
-                    .map(|_| (b'a' + rng.random_range(0..26)) as char)
-                    .collect::<String>(),
-                RecoveryCodeCharset::AlphaMixed => (0..remaining)
-                    .map(|_| {
-                        if rng.random_bool(0.5) {
-                            (b'A' + rng.random_range(0..26)) as char
-                        } else {
-                            (b'a' + rng.random_range(0..26)) as char
-                        }
-                    })
-                    .collect::<String>(),
-                RecoveryCodeCharset::Numeric => (0..remaining)
-                    .map(|_| char::from_digit(rng.random_range(0..10), 10).unwrap())
-                    .collect::<String>(),
-                RecoveryCodeCharset::Alphanumeric => {
-                    (0..remaining).map(|_| rng.sample(Alphanumeric) as char).collect::<String>()
-                },
-            };
+            code.push_str(&self.generate_chunk(&mut rng, remaining));
 
-            code.push_str(&chunk);
-
-            // Add separator if not the last chunk and separators are enabled
             if self.use_separators && i < num_chunks - 1 {
                 code.push('-');
             }
         }
-
         code
     }
 
+    /// Helper to generate a chunk of characters based on settings
+    fn generate_chunk(&self, rng: &mut impl Rng, len: usize) -> String {
+        (0..len)
+            .map(|_| match self.character_set {
+                RecoveryCodeCharset::AlphaUpper => (b'A' + rng.random_range(0..26)) as char,
+                RecoveryCodeCharset::AlphaLower => (b'a' + rng.random_range(0..26)) as char,
+                RecoveryCodeCharset::AlphaMixed => {
+                    let base = if rng.random_bool(0.5) {
+                        b'A'
+                    } else {
+                        b'a'
+                    };
+                    (base + rng.random_range(0..26)) as char
+                },
+                RecoveryCodeCharset::Numeric => {
+                    char::from_digit(rng.random_range(0..10), 10).unwrap()
+                },
+                RecoveryCodeCharset::Alphanumeric => rng.sample(Alphanumeric) as char,
+            })
+            .collect()
+    }
+
     /// Store hashed versions of the recovery codes
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if hashing the codes fails.
     async fn store_codes(&self, user_id: Uuid, codes: &[String]) -> Result<(), ApiError> {
         // In a real application, you would hash and store these codes in your database
         log::debug!("Storing {} recovery codes for user {}", codes.len(), user_id);
@@ -207,12 +209,16 @@ impl RecoveryCodeProvider {
             last_generated: now,
         };
 
-        log::info!("New recovery codes generated and settings initialized: {:?}", settings);
+        log::info!("New recovery codes generated and settings initialized: {settings:?}");
 
         Ok(())
     }
 
     /// Hash a recovery code
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError::Internal`] if the Argon2 hashing process fails.
     fn hash_code(&self, code: &str) -> Result<String, ApiError> {
         use argon2::password_hash::rand_core::OsRng;
         let mut rng = OsRng;
@@ -222,31 +228,39 @@ impl RecoveryCodeProvider {
             .hash_password(code.as_bytes(), &salt)
             .map(|hash| hash.to_string())
             .map_err(|e| ApiError::Internal {
-                message: format!("Failed to hash recovery code: {}", e),
+                message: format!("Failed to hash recovery code: {e}"),
             })
     }
 
     /// Verify a recovery code
-    pub async fn verify_code(&self, user_id: Uuid, code: &str) -> Result<bool, ApiError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the verification process fails.
+    pub fn verify_code(&self, user_id: Uuid, code: &str) -> Result<bool, ApiError> {
         // In a real application, you would:
         // 1. Retrieve all unused recovery codes for the user from your database
         // 2. Verify the provided code against each of the hashed codes
         // 3. If a match is found, mark that code as used
 
-        log::debug!("Verifying recovery code {} for user {}", code, user_id);
+        log::debug!("Verifying recovery code {code} for user {}");
 
         // Simulate checking against stored codes
         let verified = false;
 
         // If verified, we would mark the code as used in the database
         if verified {
-            log::info!("Recovery code verified successfully for user {}", user_id);
+            log::info!("Recovery code verified successfully for user {user_id}");
         }
 
         Ok(verified)
     }
 
     /// Get recovery code settings for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if retrieval fails.
     pub async fn get_settings(
         &self,
         user_id: Uuid,
@@ -256,6 +270,10 @@ impl RecoveryCodeProvider {
     }
 
     /// Create or update recovery code settings for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the update fails.
     pub async fn update_settings(&self, settings: &RecoveryCodeSettings) -> Result<(), ApiError> {
         log::debug!("Updating recovery settings for user: {}", settings.user_id);
         Ok(())
@@ -281,7 +299,7 @@ pub struct RecoveryVerification {
     pub remaining_codes: Option<usize>,
 }
 
-/// Implementation of `MfaMethod` for recovery codes
+/// Implementation of MfaMethod for recovery codes
 #[async_trait]
 impl MfaMethod for RecoveryCodeProvider {
     async fn initiate_verification(&self, _user_id: Uuid) -> Result<String, ApiError> {
@@ -296,7 +314,7 @@ impl MfaMethod for RecoveryCodeProvider {
         code: &str,
     ) -> Result<bool, ApiError> {
         // Verify the recovery code
-        self.verify_code(user_id, code).await
+        self.verify_code(user_id, code)
     }
 
     fn get_method_name(&self) -> &'static str {
