@@ -174,12 +174,12 @@ impl RecoveryCodeProvider {
             .collect()
     }
 
-    /// Store hashed versions of the recovery codes
+    /// Store-hashed versions of the recovery codes
     ///
     /// # Errors
     ///
     /// Returns [`ApiError`] if hashing the codes fails.
-    async fn store_codes(&self, user_id: Uuid, codes: &[String]) -> Result<(), ApiError> {
+    fn store_codes(&self, user_id: Uuid, codes: &[String]) -> Result<(), ApiError> {
         // In a real application, you would hash and store these codes in your database
         log::debug!("Storing {} recovery codes for user {}", codes.len(), user_id);
 
@@ -243,7 +243,7 @@ impl RecoveryCodeProvider {
         // 2. Verify the provided code against each of the hashed codes
         // 3. If a match is found, mark that code as used
 
-        log::debug!("Verifying recovery code {code} for user {}");
+        log::debug!("Verifying recovery code {code} for user {user_id}");
 
         // Simulate checking against stored codes
         let verified = false;
@@ -261,11 +261,8 @@ impl RecoveryCodeProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if retrieval fails.
-    pub async fn get_settings(
-        &self,
-        user_id: Uuid,
-    ) -> Result<Option<RecoveryCodeSettings>, ApiError> {
-        log::debug!("Fetching recovery settings for user {}", user_id);
+    pub fn get_settings(&self, user_id: Uuid) -> Result<Option<RecoveryCodeSettings>, ApiError> {
+        log::debug!("Fetching recovery settings for user {user_id}");
         Ok(None)
     }
 
@@ -274,7 +271,7 @@ impl RecoveryCodeProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if the update fails.
-    pub async fn update_settings(&self, settings: &RecoveryCodeSettings) -> Result<(), ApiError> {
+    pub fn update_settings(&self, settings: &RecoveryCodeSettings) -> Result<(), ApiError> {
         log::debug!("Updating recovery settings for user: {}", settings.user_id);
         Ok(())
     }
@@ -299,7 +296,7 @@ pub struct RecoveryVerification {
     pub remaining_codes: Option<usize>,
 }
 
-/// Implementation of MfaMethod for recovery codes
+/// Implementation of `MfaMethod` for recovery codes
 #[async_trait]
 impl MfaMethod for RecoveryCodeProvider {
     async fn initiate_verification(&self, _user_id: Uuid) -> Result<String, ApiError> {
