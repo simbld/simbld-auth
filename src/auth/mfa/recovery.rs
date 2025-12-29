@@ -108,7 +108,7 @@ impl RecoveryCodeProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if code generation, hashing, or storage fails.
-    pub async fn generate_codes(&self, user_id: Uuid) -> Result<Vec<String>, ApiError> {
+    pub fn generate_codes(&self, user_id: Uuid) -> Result<Vec<String>, ApiError> {
         let mut codes = Vec::with_capacity(self.code_count);
 
         // Generate the specified number of codes
@@ -118,7 +118,7 @@ impl RecoveryCodeProvider {
         }
 
         // Store hashed versions of the codes
-        self.store_codes(user_id, &codes).await?;
+        self.store_codes(user_id, &codes)?;
 
         // Return the plain text codes to be shown to the user
         // This is the only time they will be available in plain text
