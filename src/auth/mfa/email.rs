@@ -104,6 +104,10 @@ impl EmailMfaProvider {
     }
 
     /// Create a new verification code and send it via email
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if database insertion fails or email sending fails.
     pub async fn create_verification(&self, email: &str) -> Result<Uuid, ApiError> {
         // Generate verification code (plaintext for email only)
         let code = self.generate_code();
@@ -136,8 +140,7 @@ impl EmailMfaProvider {
         // Prepare email body
         let minutes = self.expiration_seconds / 60;
         let body = format!(
-            "Your verification code is: {}\n\nThis code will expire in {} minutes.",
-            code, minutes
+            "Your verification code is: {code}\n\nThis code will expire in {minutes} minutes."
         );
 
         // Send email
@@ -150,6 +153,10 @@ impl EmailMfaProvider {
     }
 
     /// Verify a code
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database query fails.
     pub async fn verify_code(
         &self,
         verification_id: Uuid,
@@ -168,9 +175,8 @@ impl EmailMfaProvider {
         .await
         .map_err(|e| ApiError::new(500, format!("DB query failed: {e}")))?;
 
-        let rec = match row {
-            Some(r) => r,
-            None => return Ok(false),
+        let Some(rec) = row else {
+            return Ok(false);
         };
 
         // Convert chrono times to SystemTime using non déprécié
@@ -436,6 +442,7 @@ impl SmtpEmailClient {
 }
 
 #[async_trait]
+#[async_trait]
 impl EmailClient for SmtpEmailClient {
     async fn send_email(
         &self,
@@ -444,7 +451,7 @@ impl EmailClient for SmtpEmailClient {
         subject: &str,
         body: &str,
     ) -> Result<(), String> {
-        log::info!("Sending email from {} to {} with subject '{}': {}", from, to, subject, body);
+        log::info!("Sending email from {from} to {to} with subject '{subject}': {body}");
         Ok(())
     }
 }
