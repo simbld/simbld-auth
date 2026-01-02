@@ -217,8 +217,8 @@ impl EmailMfaProvider {
         Ok(true)
     }
 
-    /// Store code in database (compatibility wrapper)
-    async fn store_code(&self, code: &EmailCode) -> Result<(), ApiError> {
+    /// Store code in a database (compatibility wrapper)
+    pub async fn store_code(&self, code: &EmailCode) -> Result<(), ApiError> {
         let created_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(code.created_at);
         let expires_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(code.expires_at);
         sqlx::query!(
@@ -240,7 +240,7 @@ impl EmailMfaProvider {
     }
 
     /// Get code from database (renvoie EmailCode avec code_hash)
-    async fn get_code(&self, id: Uuid) -> Result<EmailCode, ApiError> {
+    pub async fn get_code(&self, id: Uuid) -> Result<EmailCode, ApiError> {
         let row = sqlx::query!(
             r#"
             SELECT id, code_hash, email, created_at, expires_at, used
@@ -271,7 +271,7 @@ impl EmailMfaProvider {
     }
 
     /// Mark code as used
-    async fn mark_code_used(&self, id: Uuid) -> Result<(), ApiError> {
+    pub async fn mark_code_used(&self, id: Uuid) -> Result<(), ApiError> {
         let now = SystemTime::now();
         sqlx::query!(
             r#"
@@ -289,6 +289,10 @@ impl EmailMfaProvider {
     }
 
     /// Create Email MFA settings for a user (upsert)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database upsert operation fails.
     pub async fn create_settings(
         &self,
         user_id: Uuid,
@@ -315,6 +319,10 @@ impl EmailMfaProvider {
     }
 
     /// Get Email MFA settings for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database query fails.
     pub async fn get_settings(&self, user_id: Uuid) -> Result<Option<EmailMfaSettings>, ApiError> {
         let row = sqlx::query!(
             r#"
@@ -340,6 +348,10 @@ impl EmailMfaProvider {
     }
 
     /// Update Email MFA settings for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database update fails.
     pub async fn update_settings(&self, settings: &EmailMfaSettings) -> Result<(), ApiError> {
         sqlx::query!(
             r#"
@@ -358,6 +370,10 @@ impl EmailMfaProvider {
     }
 
     /// Delete Email MFA settings for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database delete operation fails.
     pub async fn delete_settings(&self, user_id: Uuid) -> Result<(), ApiError> {
         sqlx::query!(
             r#"
