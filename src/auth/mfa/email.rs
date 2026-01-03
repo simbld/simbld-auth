@@ -458,7 +458,6 @@ impl SmtpEmailClient {
 }
 
 #[async_trait]
-#[async_trait]
 impl EmailClient for SmtpEmailClient {
     async fn send_email(
         &self,
@@ -516,12 +515,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tokio::runtime::Runtime;
 
+    type SentEmail = (String, String, String, String);
+
     // Mock implementation of EmailClient for testing
     #[derive(Clone)]
     struct MockEmailClient {
-        sent_emails: Arc<Mutex<Vec<(String, String, String, String)>>>,
+        sent_emails: Arc<Mutex<Vec<SentEmail>>>,
     }
-
     impl MockEmailClient {
         fn new() -> Self {
             MockEmailClient {
@@ -529,7 +529,8 @@ mod tests {
             }
         }
 
-        fn get_sent_emails(&self) -> Vec<(String, String, String, String)> {
+        #[allow(dead_code)]
+        fn get_sent_emails(&self) -> Vec<SentEmail> {
             self.sent_emails.lock().unwrap().clone()
         }
     }
