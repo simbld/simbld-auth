@@ -218,6 +218,10 @@ impl EmailMfaProvider {
     }
 
     /// Store code in a database (compatibility wrapper)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database insertion fails.
     pub async fn store_code(&self, code: &EmailCode) -> Result<(), ApiError> {
         let created_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(code.created_at);
         let expires_at_chrono: DateTime<Utc> = DateTime::<Utc>::from(code.expires_at);
@@ -239,7 +243,11 @@ impl EmailMfaProvider {
         Ok(())
     }
 
-    /// Get code from database (renvoie EmailCode avec code_hash)
+    /// Get code from database (renvoie `EmailCode` avec `code_hash`)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the code isn't found or the database query fails.
     pub async fn get_code(&self, id: Uuid) -> Result<EmailCode, ApiError> {
         let row = sqlx::query!(
             r#"
@@ -271,6 +279,10 @@ impl EmailMfaProvider {
     }
 
     /// Mark code as used
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database update fails.
     pub async fn mark_code_used(&self, id: Uuid) -> Result<(), ApiError> {
         let now = SystemTime::now();
         sqlx::query!(
@@ -430,6 +442,7 @@ pub trait EmailClient: Send + Sync {
 }
 
 /// SMTP email client implementation
+#[allow(dead_code)]
 pub struct SmtpEmailClient {
     host: String,
     port: u16,
@@ -440,6 +453,7 @@ pub struct SmtpEmailClient {
 
 impl SmtpEmailClient {
     /// Create a new SMTP email client
+    #[must_use]
     pub fn new(
         host: String,
         port: u16,
@@ -479,6 +493,7 @@ pub struct AwsSesEmailClient {
 
 impl AwsSesEmailClient {
     #[allow(unused_variables)]
+    #[must_use]
     pub fn new(region: String, _access_key: String, _secret_key: String) -> Self {
         Self {
             region,
