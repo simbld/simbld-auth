@@ -1,6 +1,6 @@
 //! # Push Notification-based Multi-Factor Authentication
 //!
-//! This module provides push notification verification for multi-factor authentication.
+//! This module provides push notification verification for multifactor authentication.
 //! It sends push notifications to a mobile app and verifies the response.
 
 use crate::auth::mfa::MfaMethod;
@@ -138,6 +138,7 @@ pub struct PushMessage {
 
 impl PushMfaProvider {
     /// Create a new push notification MFA provider
+    #[must_use]
     pub fn new(config: &AppConfig, push_client: Box<dyn PushClient>) -> Self {
         Self {
             push_client,
@@ -146,6 +147,10 @@ impl PushMfaProvider {
     }
 
     /// Create a new verification and send a push notification
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if no devices are registered or notification sending fails.
     pub async fn create_verification(&self, user_id: Uuid) -> Result<Uuid, ApiError> {
         // Get user's devices
         let devices = self.get_user_devices(user_id).await?;
@@ -197,6 +202,10 @@ impl PushMfaProvider {
     }
 
     /// Check verification status
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if verification retrieval fails.
     pub async fn check_verification(
         &self,
         verification_id: Uuid,
@@ -217,6 +226,10 @@ impl PushMfaProvider {
     }
 
     /// Update verification status (called by the mobile app)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if verification is expired, already completed, or DB update fails.
     pub async fn update_verification_status(
         &self,
         verification_id: Uuid,
@@ -253,6 +266,10 @@ impl PushMfaProvider {
     }
 
     /// Register a new device
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the token is already registered to another user or storage fails.
     pub async fn register_device(
         &self,
         user_id: Uuid,
@@ -299,6 +316,10 @@ impl PushMfaProvider {
     }
 
     /// Get all devices for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if retrieval from the database fails.
     pub async fn get_user_devices(&self, user_id: Uuid) -> Result<Vec<PushDevice>, ApiError> {
         // In a real app, you would retrieve these devices from your database
         log::debug!("Getting devices for user {user_id}");
@@ -306,7 +327,11 @@ impl PushMfaProvider {
         Ok(Vec::new())
     }
 
-    /// Get to push MFA settings for a user
+    /// Get push MFA settings for a user
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if retrieval fails.
     pub async fn get_settings(&self, user_id: Uuid) -> Result<Option<PushMfaSettings>, ApiError> {
         // In a real app, you would retrieve these settings from your database
         log::debug!("Getting MFA settings for user {user_id}");
@@ -315,6 +340,10 @@ impl PushMfaProvider {
     }
 
     /// Get a device by its token
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the database query fails.
     async fn get_device_by_token(&self, token: &str) -> Result<Option<PushDevice>, ApiError> {
         // In a real app, you would retrieve this device from your database
         log::debug!("Getting device by token: {token}");
@@ -323,6 +352,10 @@ impl PushMfaProvider {
     }
 
     /// Store a device (placeholder for actual DB implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if storage fails.
     async fn store_device(&self, device: &PushDevice) -> Result<(), ApiError> {
         // In a real app, you would store the device in your database
         log::debug!("Storing device {} for user {}", device.id, device.user_id);
@@ -331,6 +364,10 @@ impl PushMfaProvider {
     }
 
     /// Update a device (placeholder for actual DB implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the update fails.
     async fn update_device(
         &self,
         device_id: &Uuid,
@@ -347,6 +384,10 @@ impl PushMfaProvider {
     }
 
     /// Update a device's last_used timestamp (placeholder for actual DB implementation)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the update fails.
     async fn update_device_last_used(&self, device_id: &str) -> Result<(), ApiError> {
         // In a real app, you would update the device in your database
         log::debug!("Updating the last_used timestamp for a device {device_id}");
@@ -554,12 +595,14 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)]
         fn with_error() -> Self {
             let mut client = Self::new();
             client.should_fail = true;
             client
         }
 
+        #[allow(dead_code)]
         fn get_sent_notifications(&self) -> Vec<(PushDevice, PushMessage)> {
             self.sent_notifications.lock().unwrap().clone()
         }
