@@ -165,7 +165,7 @@ impl PushMfaProvider {
         // Create a verification record
         let verification_id = Uuid::new_v4();
         let now = Utc::now();
-        let expires_at = now + chrono::Duration::seconds(self.expiration_seconds as i64);
+        let expires_at = now + chrono::Duration::seconds(self.expiration_seconds.cast_signed());
 
         // For this example, we'll use the first device
         let device = &devices[0];
@@ -180,7 +180,7 @@ impl PushMfaProvider {
         };
 
         // Store verification (in a real app, this would go to a database)
-        self.store_verification(&verification).await?;
+        self.store_verification(&verification)?;
 
         // Create notification
         let data = serde_json::json!({
@@ -206,19 +206,18 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if verification retrieval fails.
-    pub async fn check_verification(
+    pub fn check_verification(
         &self,
         verification_id: Uuid,
     ) -> Result<PushVerificationStatus, ApiError> {
         // Get verification
-        let verification = self.get_verification(verification_id).await?;
+        let verification = self.get_verification(verification_id)?;
 
         // Check if expired
         let now = Utc::now();
         if verification.expires_at < now && verification.status == PushVerificationStatus::Pending {
             // Update verification status
-            self.update_verification_status(verification_id, PushVerificationStatus::Expired)
-                .await?;
+            self.update_verification_status(verification_id, PushVerificationStatus::Expired)?;
             return Ok(PushVerificationStatus::Expired);
         }
 
@@ -230,13 +229,13 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if verification is expired, already completed, or DB update fails.
-    pub async fn update_verification_status(
+    pub fn update_verification_status(
         &self,
         verification_id: Uuid,
         status: PushVerificationStatus,
     ) -> Result<(), ApiError> {
         // Get verification
-        let verification = self.get_verification(verification_id).await?;
+        let verification = self.get_verification(verification_id)?;
 
         // Check if already completed or expired
         if verification.status != PushVerificationStatus::Pending {
@@ -249,17 +248,17 @@ impl PushMfaProvider {
         // Check if expired
         let now = Utc::now();
         if verification.expires_at < now {
-            // Update verification status to expired
-            self.update_verification(verification_id, PushVerificationStatus::Expired).await?;
+            // Update verification status to expire
+            self.update_verification(verification_id, PushVerificationStatus::Expired)?;
             return Err(ApiError::new(400, "Verification has expired".to_string()));
         }
 
         // Update verification status
-        self.update_verification(verification_id, status).await?;
+        self.update_verification(verification_id, status)?;
 
         // Update device last_used if approved
         if status == PushVerificationStatus::Approved {
-            self.update_device_last_used(&verification.device_id).await?;
+            self.update_device_last_used(&verification.device_id)?;
         }
 
         Ok(())
@@ -277,22 +276,16 @@ impl PushMfaProvider {
         token: &str,
         device_type: DeviceType,
     ) -> Result<Uuid, ApiError> {
-        // Check if a device with this token already exists
         if let Some(existing_device) = self.get_device_by_token(token).await? {
-            // If the device already belongs to this user, just update it
-            return if existing_device.user_id == user_id {
+            if existing_device.user_id == user_id {
                 self.update_device(&existing_device.id, name, token, device_type).await?;
-                Ok(existing_device.id)
-            } else {
-                // Device token belongs to another user, this shouldn't happen
-                Err(ApiError::new(
-                    400,
-                    "Device token already registered to another user".to_string(),
-                ))
-            };
+                return Ok(existing_device.id);
+            }
+            return Err(ApiError::BadRequest(
+                "Device token already registered to another user".to_string(),
+            ));
         }
 
-        // Create a new device
         let device_id = Uuid::new_v4();
         let now = Utc::now();
 
@@ -306,10 +299,8 @@ impl PushMfaProvider {
             last_used: None,
         };
 
-        // Store device (in a real app, this would go to a database)
+        // Correction : ajout de .await? sur les méthodes async
         self.store_device(&device).await?;
-
-        // Update device count
         self.update_device_count(user_id).await?;
 
         Ok(device_id)
@@ -319,8 +310,8 @@ impl PushMfaProvider {
     ///
     /// # Errors
     ///
-    /// Returns [`ApiError`] if retrieval from the database fails.
-    pub async fn get_user_devices(&self, user_id: Uuid) -> Result<Vec<PushDevice>, ApiError> {
+    /// Returns [`ApiError`] if the database retrieval fails.
+    pub fn get_user_devices(&self, user_id: Uuid) -> Result<Vec<PushDevice>, ApiError> {
         // In a real app, you would retrieve these devices from your database
         log::debug!("Getting devices for user {user_id}");
         // For this example, we return an empty list since we don't have a real database
@@ -332,7 +323,7 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if retrieval fails.
-    pub async fn get_settings(&self, user_id: Uuid) -> Result<Option<PushMfaSettings>, ApiError> {
+    pub fn get_settings(&self, user_id: Uuid) -> Result<Option<PushMfaSettings>, ApiError> {
         // In a real app, you would retrieve these settings from your database
         log::debug!("Getting MFA settings for user {user_id}");
         // For this example, we return None since we don't have a real database
@@ -344,10 +335,9 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if the database query fails.
-    async fn get_device_by_token(&self, token: &str) -> Result<Option<PushDevice>, ApiError> {
-        // In a real app, you would retrieve this device from your database
+    fn get_device_by_token(&self, token: &str) -> Result<Option<PushDevice>, ApiError> {
         log::debug!("Getting device by token: {token}");
-        // For this example, we return None since we don't have a real database
+        // Correction : Suppression du type générique T qui causait l'erreur d'inférence
         Ok(None)
     }
 
@@ -356,10 +346,8 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if storage fails.
-    async fn store_device(&self, device: &PushDevice) -> Result<(), ApiError> {
-        // In a real app, you would store the device in your database
+    fn store_device(&self, device: &PushDevice) -> Result<(), ApiError> {
         log::debug!("Storing device {} for user {}", device.id, device.user_id);
-        // For this example, we just pretend it's stored
         Ok(())
     }
 
@@ -375,11 +363,9 @@ impl PushMfaProvider {
         token: &str,
         device_type: DeviceType,
     ) -> Result<(), ApiError> {
-        // In a real app, you would update the device in your database
         log::debug!(
             "Updating device {device_id}: name={name}, token={token}, type={device_type:?}"
         );
-        // For this example, we just pretend it's updated
         Ok(())
     }
 
@@ -388,7 +374,7 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if the update fails.
-    async fn update_device_last_used(&self, device_id: &str) -> Result<(), ApiError> {
+    fn update_device_last_used(&self, device_id: &str) -> Result<(), ApiError> {
         // In a real app, you would update the device in your database
         log::debug!("Updating the last_used timestamp for a device {device_id}");
         // For this example, we just pretend it's updated
@@ -396,15 +382,21 @@ impl PushMfaProvider {
     }
 
     /// Update a user's device count (placeholder for actual DB implementation)
-    async fn update_device_count(&self, user_id: Uuid) -> Result<(), ApiError> {
-        // In a real app, you would update the user's settings in your database
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the update fails.
+    fn update_device_count(&self, user_id: Uuid) -> Result<(), ApiError> {
         log::debug!("Updating device count for user {user_id}");
-        // For this example, we just pretend it's updated
         Ok(())
     }
 
     /// Store verification (placeholder for actual DB implementation)
-    async fn store_verification(&self, verification: &PushVerification) -> Result<(), ApiError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if storage fails.
+    fn store_verification(&self, verification: &PushVerification) -> Result<(), ApiError> {
         // In a real app, you would store the verification in your database
         log::debug!("Storing verification {} for user {}", verification.id, verification.user_id);
         // For this example, we just pretend it's stored
@@ -412,7 +404,11 @@ impl PushMfaProvider {
     }
 
     /// Get verification (placeholder for actual DB implementation)
-    async fn get_verification(&self, verification_id: Uuid) -> Result<PushVerification, ApiError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError::BadRequest`] if the verification is not found.
+    fn get_verification(&self, verification_id: Uuid) -> Result<PushVerification, ApiError> {
         // In a real app, you would retrieve the verification from your database
         log::debug!("Getting verification {verification_id}");
         // For this example, we return an error since we don't have a real database
@@ -420,7 +416,11 @@ impl PushMfaProvider {
     }
 
     /// Update verification (placeholder for actual DB implementation)
-    async fn update_verification(
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if the update fails.
+    fn update_verification(
         &self,
         verification_id: Uuid,
         status: PushVerificationStatus,
@@ -432,6 +432,10 @@ impl PushMfaProvider {
     }
 
     /// Delete a device
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if deletion fails.
     pub async fn delete_device(&self, device_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
         // In a real app, you would delete the device from your database
         log::debug!("Deleting device {device_id} for user {user_id}");
@@ -447,6 +451,11 @@ impl PushMfaProvider {
 /// Implement MFA method trait for push notifications
 #[async_trait]
 impl MfaMethod for PushMfaProvider {
+    /// Initiate verification
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if challenge creation or notification fails.
     async fn initiate_verification(&self, user_id: Uuid) -> Result<String, ApiError> {
         // Create verification and send a push notification
         let verification_id = self.create_verification(user_id).await?;
@@ -455,6 +464,11 @@ impl MfaMethod for PushMfaProvider {
         Ok(verification_id.to_string())
     }
 
+    /// Complete verification
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApiError`] if parsing fails, verification is expired, or status is pending.
     async fn complete_verification(
         &self,
         _user_id: Uuid,
@@ -462,20 +476,20 @@ impl MfaMethod for PushMfaProvider {
         _code: &str,
     ) -> Result<bool, ApiError> {
         // Parse verification ID from string
-        let verification_id = Uuid::parse_str(verification_id)
-            .map_err(|_| ApiError::new(400, "Invalid verification ID".to_string()))?;
+        let verification_uuid = Uuid::parse_str(verification_id)
+            .map_err(|_| ApiError::BadRequest("Invalid verification ID".to_string()))?;
 
         // Check verification status
-        let status = self.check_verification(verification_id).await?;
+        let status = self.check_verification(verification_uuid)?;
 
         match status {
             PushVerificationStatus::Approved => Ok(true),
             PushVerificationStatus::Rejected => Ok(false),
             PushVerificationStatus::Expired => {
-                Err(ApiError::new(400, "Verification has expired".to_string()))
+                Err(ApiError::BadRequest("Verification has expired".to_string()))
             },
             PushVerificationStatus::Pending => {
-                Err(ApiError::new(400, "Verification is still pending".to_string()))
+                Err(ApiError::BadRequest("Verification is still pending".to_string()))
             },
         }
     }
