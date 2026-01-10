@@ -152,22 +152,16 @@ impl PushMfaProvider {
     ///
     /// Returns [`ApiError`] if no devices are registered or notification sending fails.
     pub async fn create_verification(&self, user_id: Uuid) -> Result<Uuid, ApiError> {
-        // Get user's devices
         let devices = self.get_user_devices(user_id).await?;
 
         if devices.is_empty() {
-            return Err(ApiError::new(
-                400,
-                "No devices registered for push notification".to_string(),
-            ));
+            return Err(ApiError::BadRequest("No devices registered for push notification".into()));
         }
 
-        // Create a verification record
         let verification_id = Uuid::new_v4();
         let now = Utc::now();
         let expires_at = now + chrono::Duration::seconds(self.expiration_seconds.cast_signed());
 
-        // For this example, we'll use the first device
         let device = &devices[0];
 
         let verification = PushVerification {
@@ -179,10 +173,8 @@ impl PushMfaProvider {
             device_id: device.id.to_string(),
         };
 
-        // Store verification (in a real app, this would go to a database)
-        self.store_verification(&verification)?;
+        self.store_verification(&verification).await?;
 
-        // Create notification
         let data = serde_json::json!({
             "verification_id": verification_id.to_string(),
             "expires_at": expires_at.to_rfc3339(),
@@ -195,7 +187,6 @@ impl PushMfaProvider {
             data,
         };
 
-        // Send notification
         self.push_client.send_notification(device, &message).await?;
 
         Ok(verification_id)
@@ -206,18 +197,16 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if verification retrieval fails.
-    pub fn check_verification(
+    pub async fn check_verification(
         &self,
         verification_id: Uuid,
     ) -> Result<PushVerificationStatus, ApiError> {
-        // Get verification
-        let verification = self.get_verification(verification_id)?;
+        let verification = self.get_verification(verification_id).await?;
 
-        // Check if expired
         let now = Utc::now();
         if verification.expires_at < now && verification.status == PushVerificationStatus::Pending {
-            // Update verification status
-            self.update_verification_status(verification_id, PushVerificationStatus::Expired)?;
+            self.update_verification_status(verification_id, PushVerificationStatus::Expired)
+                .await?;
             return Ok(PushVerificationStatus::Expired);
         }
 
@@ -228,37 +217,28 @@ impl PushMfaProvider {
     ///
     /// # Errors
     ///
-    /// Returns [`ApiError`] if verification is expired, already completed, or DB update fails.
-    pub fn update_verification_status(
+    /// Returns [`ApiError`] if verification is expired or already completed.
+    pub async fn update_verification_status(
         &self,
         verification_id: Uuid,
         status: PushVerificationStatus,
     ) -> Result<(), ApiError> {
-        // Get verification
-        let verification = self.get_verification(verification_id)?;
+        let verification = self.get_verification(verification_id).await?;
 
-        // Check if already completed or expired
         if verification.status != PushVerificationStatus::Pending {
-            return Err(ApiError::new(
-                400,
-                "Verification is already completed or expired".to_string(),
-            ));
+            return Err(ApiError::BadRequest("Verification is already completed".into()));
         }
 
-        // Check if expired
         let now = Utc::now();
         if verification.expires_at < now {
-            // Update verification status to expire
-            self.update_verification(verification_id, PushVerificationStatus::Expired)?;
-            return Err(ApiError::new(400, "Verification has expired".to_string()));
+            self.update_verification(verification_id, PushVerificationStatus::Expired).await?;
+            return Err(ApiError::BadRequest("Verification has expired".into()));
         }
 
-        // Update verification status
-        self.update_verification(verification_id, status)?;
+        self.update_verification(verification_id, status).await?;
 
-        // Update device last_used if approved
         if status == PushVerificationStatus::Approved {
-            self.update_device_last_used(&verification.device_id)?;
+            self.update_device_last_used(&verification.device_id).await?;
         }
 
         Ok(())
@@ -268,7 +248,7 @@ impl PushMfaProvider {
     ///
     /// # Errors
     ///
-    /// Returns [`ApiError`] if the token is already registered to another user or storage fails.
+    /// Returns [`ApiError`] if storage fails.
     pub async fn register_device(
         &self,
         user_id: Uuid,
@@ -281,9 +261,7 @@ impl PushMfaProvider {
                 self.update_device(&existing_device.id, name, token, device_type).await?;
                 return Ok(existing_device.id);
             }
-            return Err(ApiError::BadRequest(
-                "Device token already registered to another user".to_string(),
-            ));
+            return Err(ApiError::BadRequest("Token registered to another user".into()));
         }
 
         let device_id = Uuid::new_v4();
@@ -299,7 +277,6 @@ impl PushMfaProvider {
             last_used: None,
         };
 
-        // Correction : ajout de .await? sur les méthodes async
         self.store_device(&device).await?;
         self.update_device_count(user_id).await?;
 
@@ -310,124 +287,69 @@ impl PushMfaProvider {
     ///
     /// # Errors
     ///
-    /// Returns [`ApiError`] if the database retrieval fails.
-    pub fn get_user_devices(&self, user_id: Uuid) -> Result<Vec<PushDevice>, ApiError> {
-        // In a real app, you would retrieve these devices from your database
-        log::debug!("Getting devices for user {user_id}");
-        // For this example, we return an empty list since we don't have a real database
+    /// Returns [`ApiError`] if retrieval fails.
+    #[allow(clippy::unused_async)]
+    pub async fn get_user_devices(&self, _u_id: Uuid) -> Result<Vec<PushDevice>, ApiError> {
         Ok(Vec::new())
     }
 
-    /// Get push MFA settings for a user
+    /// Get push MFA settings
     ///
     /// # Errors
     ///
     /// Returns [`ApiError`] if retrieval fails.
-    pub fn get_settings(&self, user_id: Uuid) -> Result<Option<PushMfaSettings>, ApiError> {
-        // In a real app, you would retrieve these settings from your database
-        log::debug!("Getting MFA settings for user {user_id}");
-        // For this example, we return None since we don't have a real database
+    #[allow(clippy::unused_async)]
+    pub async fn get_settings(&self, _u_id: Uuid) -> Result<Option<PushMfaSettings>, ApiError> {
         Ok(None)
     }
 
-    /// Get a device by its token
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if the database query fails.
-    fn get_device_by_token(&self, token: &str) -> Result<Option<PushDevice>, ApiError> {
-        log::debug!("Getting device by token: {token}");
-        // Correction : Suppression du type générique T qui causait l'erreur d'inférence
+    #[allow(clippy::unused_async)]
+    async fn get_device_by_token(&self, _t: &str) -> Result<Option<PushDevice>, ApiError> {
         Ok(None)
     }
 
-    /// Store a device (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if storage fails.
-    fn store_device(&self, device: &PushDevice) -> Result<(), ApiError> {
-        log::debug!("Storing device {} for user {}", device.id, device.user_id);
+    #[allow(clippy::unused_async)]
+    async fn store_device(&self, _d: &PushDevice) -> Result<(), ApiError> {
         Ok(())
     }
 
-    /// Update a device (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if the update fails.
+    #[allow(clippy::unused_async)]
     async fn update_device(
         &self,
-        device_id: &Uuid,
-        name: &str,
-        token: &str,
-        device_type: DeviceType,
+        _id: &Uuid,
+        _n: &str,
+        _t: &str,
+        _dt: DeviceType,
     ) -> Result<(), ApiError> {
-        log::debug!(
-            "Updating device {device_id}: name={name}, token={token}, type={device_type:?}"
-        );
         Ok(())
     }
 
-    /// Update a device's last_used timestamp (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if the update fails.
-    fn update_device_last_used(&self, device_id: &str) -> Result<(), ApiError> {
-        // In a real app, you would update the device in your database
-        log::debug!("Updating the last_used timestamp for a device {device_id}");
-        // For this example, we just pretend it's updated
+    #[allow(clippy::unused_async)]
+    async fn update_device_last_used(&self, _d_id: &str) -> Result<(), ApiError> {
         Ok(())
     }
 
-    /// Update a user's device count (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if the update fails.
-    fn update_device_count(&self, user_id: Uuid) -> Result<(), ApiError> {
-        log::debug!("Updating device count for user {user_id}");
+    #[allow(clippy::unused_async)]
+    async fn update_device_count(&self, _u_id: Uuid) -> Result<(), ApiError> {
         Ok(())
     }
 
-    /// Store verification (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if storage fails.
-    fn store_verification(&self, verification: &PushVerification) -> Result<(), ApiError> {
-        // In a real app, you would store the verification in your database
-        log::debug!("Storing verification {} for user {}", verification.id, verification.user_id);
-        // For this example, we just pretend it's stored
+    #[allow(clippy::unused_async)]
+    async fn store_verification(&self, _v: &PushVerification) -> Result<(), ApiError> {
         Ok(())
     }
 
-    /// Get verification (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError::BadRequest`] if the verification is not found.
-    fn get_verification(&self, verification_id: Uuid) -> Result<PushVerification, ApiError> {
-        // In a real app, you would retrieve the verification from your database
-        log::debug!("Getting verification {verification_id}");
-        // For this example, we return an error since we don't have a real database
-        Err(ApiError::new(404, "Verification not found".to_string()))
+    #[allow(clippy::unused_async)]
+    async fn get_verification(&self, _id: Uuid) -> Result<PushVerification, ApiError> {
+        Err(ApiError::BadRequest("Verification not found".into()))
     }
 
-    /// Update verification (placeholder for actual DB implementation)
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if the update fails.
-    fn update_verification(
+    #[allow(clippy::unused_async)]
+    async fn update_verification(
         &self,
-        verification_id: Uuid,
-        status: PushVerificationStatus,
+        _id: Uuid,
+        _s: PushVerificationStatus,
     ) -> Result<(), ApiError> {
-        // In a real app, you would update the verification in your database
-        log::debug!("Updating verification {verification_id} to status {status:?}");
-        // For this example, we just pretend it's updated
         Ok(())
     }
 
@@ -436,60 +358,38 @@ impl PushMfaProvider {
     /// # Errors
     ///
     /// Returns [`ApiError`] if deletion fails.
-    pub async fn delete_device(&self, device_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
-        // In a real app, you would delete the device from your database
-        log::debug!("Deleting device {device_id} for user {user_id}");
-        // For this example, we just pretend it's deleted
-
-        // Update device count
+    pub async fn delete_device(&self, _d_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
         self.update_device_count(user_id).await?;
-
         Ok(())
     }
 }
 
-/// Implement MFA method trait for push notifications
 #[async_trait]
 impl MfaMethod for PushMfaProvider {
-    /// Initiate verification
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if challenge creation or notification fails.
     async fn initiate_verification(&self, user_id: Uuid) -> Result<String, ApiError> {
-        // Create verification and send a push notification
         let verification_id = self.create_verification(user_id).await?;
-
-        // Return verification ID as a string
         Ok(verification_id.to_string())
     }
 
-    /// Complete verification
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ApiError`] if parsing fails, verification is expired, or status is pending.
     async fn complete_verification(
         &self,
-        _user_id: Uuid,
-        verification_id: &str,
-        _code: &str,
+        _u_id: Uuid,
+        v_id: &str,
+        _c: &str,
     ) -> Result<bool, ApiError> {
-        // Parse verification ID from string
-        let verification_uuid = Uuid::parse_str(verification_id)
-            .map_err(|_| ApiError::BadRequest("Invalid verification ID".to_string()))?;
+        let v_uuid = Uuid::parse_str(v_id)
+            .map_err(|_| ApiError::BadRequest("Invalid verification ID".into()))?;
 
-        // Check verification status
-        let status = self.check_verification(verification_uuid)?;
+        let status = self.check_verification(v_uuid).await?;
 
         match status {
             PushVerificationStatus::Approved => Ok(true),
             PushVerificationStatus::Rejected => Ok(false),
             PushVerificationStatus::Expired => {
-                Err(ApiError::BadRequest("Verification has expired".to_string()))
+                Err(ApiError::BadRequest("Verification expired".into()))
             },
             PushVerificationStatus::Pending => {
-                Err(ApiError::BadRequest("Verification is still pending".to_string()))
+                Err(ApiError::BadRequest("Verification pending".into()))
             },
         }
     }
@@ -501,15 +401,12 @@ impl MfaMethod for PushMfaProvider {
 
 /// Basic implementation of a push client for Firebase Cloud Messaging (FCM)
 pub struct FcmPushClient {
-    /// FCM API key
     api_key: String,
-
-    /// HTTP client
     http_client: reqwest::Client,
 }
 
 impl FcmPushClient {
-    /// Create a new FCM push client
+    #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
@@ -523,48 +420,14 @@ impl PushClient for FcmPushClient {
     async fn send_notification(
         &self,
         device: &PushDevice,
-        message: &PushMessage,
+        msg: &PushMessage,
     ) -> Result<(), ApiError> {
-        // Build FCM payload
-        let payload = match device.device_type {
-            DeviceType::IOs => {
-                serde_json::json!({
-                    "to": device.token,
-                    "notification": {
-                        "title": message.title,
-                        "body": message.body,
-                        "sound": "default"
-                    },
-                    "data": message.data,
-                    "priority": "high",
-                    "content_available": true
-                })
-            },
-            DeviceType::Android => {
-                serde_json::json!({
-                    "to": device.token,
-                    "notification": {
-                        "title": message.title,
-                        "body": message.body
-                    },
-                    "data": message.data,
-                    "priority": "high"
-                })
-            },
-            _ => {
-                // Web or other device types use a generic format
-                serde_json::json!({
-                    "to": device.token,
-                    "notification": {
-                        "title": message.title,
-                        "body": message.body
-                    },
-                    "data": message.data
-                })
-            },
-        };
+        let payload = serde_json::json!({
+            "to": device.token,
+            "notification": { "title": msg.title, "body": msg.body },
+            "data": msg.data
+        });
 
-        // Send to FCM
         let res = self
             .http_client
             .post("https://fcm.googleapis.com/fcm/send")
@@ -573,28 +436,24 @@ impl PushClient for FcmPushClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| ApiError::new(500, format!("Failed to send push notification: {}", e)))?;
+            .map_err(|e| ApiError::Internal {
+                message: format!("FCM error: {e}"),
+            })?;
 
-        // Check response
         if !res.status().is_success() {
-            let error_message = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-
-            return Err(ApiError::new(
-                500,
-                format!("FCM rejected push notification: {}", error_message),
-            ));
+            return Err(ApiError::Internal {
+                message: "FCM rejected notification".into(),
+            });
         }
-
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use std::sync::{Arc, Mutex};
 
-    // Mock implementation for a push notification client
     #[derive(Clone)]
     struct MockPushClient {
         sent_notifications: Arc<Mutex<Vec<(PushDevice, PushMessage)>>>,
@@ -603,19 +462,17 @@ mod tests {
 
     impl MockPushClient {
         fn new() -> Self {
-            MockPushClient {
+            Self {
                 sent_notifications: Arc::new(Mutex::new(Vec::new())),
                 should_fail: false,
             }
         }
-
         #[allow(dead_code)]
         fn with_error() -> Self {
             let mut client = Self::new();
             client.should_fail = true;
             client
         }
-
         #[allow(dead_code)]
         fn get_sent_notifications(&self) -> Vec<(PushDevice, PushMessage)> {
             self.sent_notifications.lock().unwrap().clone()
@@ -624,22 +481,17 @@ mod tests {
 
     #[async_trait]
     impl PushClient for MockPushClient {
-        async fn send_notification(
-            &self,
-            device: &PushDevice,
-            message: &PushMessage,
-        ) -> Result<(), ApiError> {
+        async fn send_notification(&self, d: &PushDevice, m: &PushMessage) -> Result<(), ApiError> {
             if self.should_fail {
-                return Err(ApiError::new(500, "Simulated push notification failure".to_string()));
+                return Err(ApiError::Internal {
+                    message: "Mock failure".into(),
+                });
             }
-
-            self.sent_notifications.lock().unwrap().push((device.clone(), message.clone()));
-
+            self.sent_notifications.lock().unwrap().push((d.clone(), m.clone()));
             Ok(())
         }
     }
 
-    // Test for provider creation
     #[test]
     fn test_provider_creation() {
         let push_client = Box::new(MockPushClient::new());
@@ -647,11 +499,9 @@ mod tests {
             push_client,
             expiration_seconds: 300,
         };
-
         assert_eq!(provider.expiration_seconds, 300);
     }
 
-    // Test for method name
     #[test]
     fn test_method_name() {
         let push_client = Box::new(MockPushClient::new());
@@ -659,18 +509,14 @@ mod tests {
             push_client,
             expiration_seconds: 300,
         };
-
         assert_eq!(provider.get_method_name(), "push");
     }
 
-    // Test for verification status
     #[test]
     fn test_push_verification_status() {
-        // Check that statuses can be compared correctly
         assert_eq!(PushVerificationStatus::Pending, PushVerificationStatus::Pending);
         assert_ne!(PushVerificationStatus::Approved, PushVerificationStatus::Rejected);
 
-        // Create verification
         let user_id = Uuid::new_v4();
         let verification = PushVerification {
             id: Uuid::new_v4(),
@@ -680,12 +526,9 @@ mod tests {
             status: PushVerificationStatus::Pending,
             device_id: "device123".to_string(),
         };
-
-        // Verify that initial status is Pending
         assert_eq!(verification.status, PushVerificationStatus::Pending);
     }
 
-    // Test for push device creation
     #[test]
     fn test_push_device_creation() {
         let user_id = Uuid::new_v4();
@@ -698,20 +541,16 @@ mod tests {
             created_at: Utc::now(),
             last_used: None,
         };
-
         assert_eq!(device.name, "Test Phone");
         assert_eq!(device.device_type, DeviceType::Android);
-        assert_eq!(device.last_used, None);
     }
 
-    // Test for FcmPushClient creation
     #[test]
     fn test_fcm_client_creation() {
         let client = FcmPushClient {
             api_key: "test-api-key".to_string(),
             http_client: reqwest::Client::new(),
         };
-
         assert_eq!(client.api_key, "test-api-key");
     }
 }
