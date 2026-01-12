@@ -20,7 +20,7 @@ async fn create_test_auth_service() -> web::Data<AuthService> {
 
     match Database::new(&db_url).await {
         Ok(database) => web::Data::new(AuthService::new(database, jwt_service)),
-        Err(e) => panic!("\n[ERREUR TEST]Unable to connect to DB : {e:?}\nMake sure Postgres is running or skip this test with #[ignore].\n"),
+        Err(e) => panic!("\n[TEST ERROR]Unable to connect to DB : {e:?}\nMake sure Postgres is running or skip this test with #[ignore].\n"),
     }
 }
 
