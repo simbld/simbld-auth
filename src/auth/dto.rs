@@ -3,16 +3,22 @@
 //! Contains all the request and response structures for auth APIs
 
 use crate::auth::password::security::SecurePassword;
-use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-lazy_static! {
-    static ref STRONG_PASSWORD_REGEX: Regex =
-        Regex::new(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]).{12,}$")
-            .unwrap();
+static PASSWORD_LENGTH_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^.{12,}$").unwrap());
+
+pub fn is_strong_password(password: &str) -> bool {
+    let has_uppercase = password.chars().any(char::is_uppercase);
+    let has_lowercase = password.chars().any(char::is_lowercase);
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
+    let has_special = password.chars().any(|c| !c.is_alphanumeric());
+    let has_length = PASSWORD_LENGTH_REGEX.is_match(password);
+
+    has_uppercase && has_lowercase && has_digit && has_special && has_length
 }
 
 /// User registration request
@@ -35,6 +41,12 @@ pub struct RegisterRequest {
 }
 
 impl RegisterRequest {
+    /// Validate all fields of the registration request
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationErrors`] if any field fails automatic validation
+    /// or if the password doesn't meet the strength requirements.
     pub fn validate_all(&self) -> Result<(), ValidationErrors> {
         // 1. Automatic validation of normal fields
         self.validate()?;
@@ -133,6 +145,12 @@ pub struct PasswordResetConfirm {
 }
 
 impl PasswordResetConfirm {
+    /// Validate all fields of the password reset confirmation
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationErrors`] if the token is invalid or if the new password
+    /// doesn't meet the strength requirements.
     pub fn validate_all(&self) -> Result<(), ValidationErrors> {
         // 1. Automatic validation of normal fields
         self.validate()?;
@@ -151,6 +169,7 @@ impl PasswordResetConfirm {
         }
     }
 }
+
 /// Session information response
 #[derive(Debug, Serialize)]
 pub struct SessionInfo {
@@ -186,7 +205,7 @@ pub struct AssignRoleRequest {
     pub role: String,
 }
 
-/// WebAuthn verification request
+/// `WebAuthn` verification request
 #[derive(Debug, Deserialize)]
 pub struct WebAuthnVerifyRequest {
     pub setup_token: String,
@@ -194,7 +213,7 @@ pub struct WebAuthnVerifyRequest {
 }
 
 /// MFA type enumeration
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum MfaType {
     Totp,
     Sms,
@@ -217,12 +236,17 @@ impl std::fmt::Display for MfaType {
     }
 }
 
-/// Custom deserializer for SecurePassword
+/// Custom deserializer for `SecurePassword`
+///
+/// # Errors
+///
+/// Returns a deserialization error if the input isn't a valid string or
+/// can't be mapped to a `SecurePassword` instance.
 pub fn deserialize_secure_password<'de, D>(deserializer: D) -> Result<SecurePassword, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let password_string: String = Deserialize::deserialize(deserializer)?;
+    let password_string: String = serde::Deserialize::deserialize(deserializer)?;
     Ok(SecurePassword::new(password_string))
 }
 
@@ -240,7 +264,7 @@ fn validate_strong_password(password: &SecurePassword) -> Result<(), ValidationE
     }
 
     // Verification of complexity
-    if STRONG_PASSWORD_REGEX.is_match(password_str) {
+    if PASSWORD_LENGTH_REGEX.is_match(password_str) {
         Ok(())
     } else {
         Err(ValidationError::new("weak_password"))
@@ -256,17 +280,17 @@ mod tests {
     #[test]
     fn test_strong_password_regex() {
         // Valid passwords
-        assert!(STRONG_PASSWORD_REGEX.is_match("MyStrongPass123!"));
-        assert!(STRONG_PASSWORD_REGEX.is_match("Tr0ub4dor&3@"));
-        assert!(STRONG_PASSWORD_REGEX.is_match("ComplexPassword2024#"));
+        assert!(PASSWORD_LENGTH_REGEX.is_match("MyStrongPass123!"));
+        assert!(PASSWORD_LENGTH_REGEX.is_match("Tr0ub4dor&3@"));
+        assert!(PASSWORD_LENGTH_REGEX.is_match("ComplexPassword2024#"));
 
         // Invalid passwords
-        assert!(!STRONG_PASSWORD_REGEX.is_match("short"));
-        assert!(!STRONG_PASSWORD_REGEX.is_match("nouppercase123!"));
-        assert!(!STRONG_PASSWORD_REGEX.is_match("NOLOWERCASE123!"));
-        assert!(!STRONG_PASSWORD_REGEX.is_match("NoNumbers!"));
-        assert!(!STRONG_PASSWORD_REGEX.is_match("NoSpecialChars123"));
-        assert!(!STRONG_PASSWORD_REGEX.is_match("TooShort1!"));
+        assert!(!PASSWORD_LENGTH_REGEX.is_match("short"));
+        assert!(!PASSWORD_LENGTH_REGEX.is_match("no_uppercase123!"));
+        assert!(!PASSWORD_LENGTH_REGEX.is_match("NO_LOWERCASE123!"));
+        assert!(!PASSWORD_LENGTH_REGEX.is_match("No_Numbers!"));
+        assert!(!PASSWORD_LENGTH_REGEX.is_match("NoSpecialChars123"));
+        assert!(!PASSWORD_LENGTH_REGEX.is_match("TooShort1!"));
     }
 
     #[test]

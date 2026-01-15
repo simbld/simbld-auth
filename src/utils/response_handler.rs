@@ -143,7 +143,7 @@ impl ResponseHandler {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Error {}–{}</title>
+                <title>Error {} - {}</title>
                 <style>
                     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
                     body {{
@@ -521,8 +521,9 @@ mod tests {
         assert_eq!(response.status(), 404);
 
         // Check if the response body contains custom content
-        let body = response.into_body();
-        // Note: In a real test, you'd need to read the body content
-        // This is a simplified test structure
+        let body = actix_web::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = std::str::from_utf8(&body).unwrap();
+        assert!(body_str.contains("Custom Title"));
+        assert!(body_str.contains("Custom Description"));
     }
 }
