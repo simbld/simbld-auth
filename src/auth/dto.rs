@@ -236,35 +236,28 @@ impl std::fmt::Display for MfaType {
     }
 }
 
-/// Custom deserializer for `SecurePassword`
+/// Validation function for strong passwords
 ///
 /// # Errors
 ///
-/// Returns a deserialization error if the input isn't a valid string or
-/// can't be mapped to a `SecurePassword` instance.
-pub fn deserialize_secure_password<'de, D>(deserializer: D) -> Result<SecurePassword, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let password_string: String = serde::Deserialize::deserialize(deserializer)?;
-    Ok(SecurePassword::new(password_string))
-}
-
-/// Validation function for strong passwords
+/// Returns `ValidationError` if the password is too short, too long, or weak.
 fn validate_strong_password(password: &SecurePassword) -> Result<(), ValidationError> {
     let password_str = password.expose_secret();
 
-    // Length verification
     if password_str.len() < 12 {
         return Err(ValidationError::new("password_too_short"));
     }
-
     if password_str.len() > 128 {
         return Err(ValidationError::new("password_too_long"));
     }
 
-    // Verification of complexity
-    if PASSWORD_LENGTH_REGEX.is_match(password_str) {
+    // On remplace le Regex look-ahead par des vérifications Rust natives
+    let has_uppercase = password_str.chars().any(|c| c.is_uppercase());
+    let has_lowercase = password_str.chars().any(|c| c.is_lowercase());
+    let has_digit = password_str.chars().any(|c| c.is_ascii_digit());
+    let has_special = password_str.chars().any(|c| !c.is_alphanumeric());
+
+    if has_uppercase && has_lowercase && has_digit && has_special {
         Ok(())
     } else {
         Err(ValidationError::new("weak_password"))
