@@ -252,8 +252,8 @@ fn validate_strong_password(password: &SecurePassword) -> Result<(), ValidationE
     }
 
     // On remplace le Regex look-ahead par des vérifications Rust natives
-    let has_uppercase = password_str.chars().any(|c| c.is_uppercase());
-    let has_lowercase = password_str.chars().any(|c| c.is_lowercase());
+    let has_uppercase = password_str.chars().any(char::is_uppercase);
+    let has_lowercase = password_str.chars().any(char::is_lowercase);
     let has_digit = password_str.chars().any(|c| c.is_ascii_digit());
     let has_special = password_str.chars().any(|c| !c.is_alphanumeric());
 
@@ -262,6 +262,19 @@ fn validate_strong_password(password: &SecurePassword) -> Result<(), ValidationE
     } else {
         Err(ValidationError::new("weak_password"))
     }
+}
+
+/// Custom deserializer for `SecurePassword`
+///
+/// # Errors
+///
+/// Returns a deserialization error if the input isn't a valid string.
+pub fn deserialize_secure_password<'de, D>(deserializer: D) -> Result<SecurePassword, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let password_string: String = serde::Deserialize::deserialize(deserializer)?;
+    Ok(SecurePassword::new(password_string))
 }
 
 #[cfg(test)]
