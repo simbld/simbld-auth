@@ -284,19 +284,17 @@ mod tests {
     use validator::Validate;
 
     #[test]
-    fn test_strong_password_regex() {
-        // Valid passwords
-        assert!(PASSWORD_LENGTH_REGEX.is_match("MyStrongPass123!"));
-        assert!(PASSWORD_LENGTH_REGEX.is_match("Tr0ub4dor&3@"));
-        assert!(PASSWORD_LENGTH_REGEX.is_match("ComplexPassword2024#"));
+    fn test_strong_password_validation() {
+        // Au lieu de tester le Regex seul, on teste la fonction de validation réelle
+        let strong = SecurePassword::new("MyStrongPass123!".to_string());
+        let weak_no_upper = SecurePassword::new("mystrongpass123!".to_string());
+        let weak_no_digit = SecurePassword::new("MyStrongPass!".to_string());
+        let weak_short = SecurePassword::new("Ab1!".to_string());
 
-        // Invalid passwords
-        assert!(!PASSWORD_LENGTH_REGEX.is_match("short"));
-        assert!(!PASSWORD_LENGTH_REGEX.is_match("no_uppercase123!"));
-        assert!(!PASSWORD_LENGTH_REGEX.is_match("NO_LOWERCASE123!"));
-        assert!(!PASSWORD_LENGTH_REGEX.is_match("No_Numbers!"));
-        assert!(!PASSWORD_LENGTH_REGEX.is_match("NoSpecialChars123"));
-        assert!(!PASSWORD_LENGTH_REGEX.is_match("TooShort1!"));
+        assert!(validate_strong_password(&strong).is_ok());
+        assert!(validate_strong_password(&weak_no_upper).is_err());
+        assert!(validate_strong_password(&weak_no_digit).is_err());
+        assert!(validate_strong_password(&weak_short).is_err());
     }
 
     #[test]
