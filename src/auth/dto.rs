@@ -281,7 +281,6 @@ where
 mod tests {
     use super::*;
     use serde_json;
-    use validator::Validate;
 
     #[test]
     fn test_strong_password_validation() {
@@ -336,10 +335,12 @@ mod tests {
             lastname: "Doe".to_string(),
         };
 
-        let validation_result = weak_request.validate();
-        assert!(validation_result.is_err());
+        // Fix: use validate_all() instead of validate()
+        let validation_result = weak_request.validate_all();
+        assert!(validation_result.is_err(), "Password 'weak' should be refused");
 
         let errors = validation_result.unwrap_err();
+        // We check that the error concerns the password field
         assert!(errors.field_errors().contains_key("password"));
     }
 
