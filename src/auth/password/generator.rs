@@ -17,6 +17,19 @@ fn generate_characters(start: char, end: char) -> Vec<u8> {
     (start as u8..=end as u8).collect()
 }
 
+/// Generates a random password of length [`PASSWORD_LENGTH`].
+///
+/// The password is built from uppercase letters, lowercase letters, digits, and symbols,
+/// then shuffled before being returned.
+///
+/// # Panics
+///
+/// This function may panic if:
+/// - Any character category is empty (for example, if [`SYMBOLS`] is empty), because
+///   `choose(...).unwrap()` would fail;
+/// - The final `String::from_utf8(...)` conversion fails (for example, if [`SYMBOLS`]
+///   contains non-UTF-8 bytes), because `.expect(...)` will panic.
+#[must_use]
 pub fn generate_password() -> String {
     let mut rng = rand::rng();
     let length = PASSWORD_LENGTH;
@@ -38,7 +51,7 @@ pub fn generate_password() -> String {
         let categories = [uppercase.as_slice(), lowercase.as_slice(), digits.as_slice(), SYMBOLS];
         let &category = categories.as_slice().choose(&mut rng).unwrap();
         let &next_char = category.choose(&mut rng).unwrap();
-        if password.last().map(|&last| last != next_char).unwrap_or(true) {
+        if password.last().is_none_or(|&last| last != next_char) {
             password.push(next_char);
         }
     }
