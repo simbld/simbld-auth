@@ -37,9 +37,7 @@ pub fn configure_auth_routes(auth_service: web::Data<AuthService>) -> Scope {
 }
 
 /// Get current user profile
-async fn get_profile(
-    _auth_service: web::Data<AuthService>,
-) -> Result<HttpResponse, actix_web::Error> {
+async fn get_profile() -> Result<HttpResponse, actix_web::Error> {
     // TODO: Extract user from auth middleware when implemented
     Ok(HttpResponse::Ok().json(json!({
         "message": "Profile endpoint - to be implemented",
@@ -48,9 +46,7 @@ async fn get_profile(
 }
 
 /// List of user sessions
-async fn list_sessions(
-    _auth_service: web::Data<AuthService>,
-) -> Result<HttpResponse, actix_web::Error> {
+async fn list_sessions() -> Result<HttpResponse, actix_web::Error> {
     // TODO: Implement with SessionService::list_sessions
     Ok(HttpResponse::Ok().json(json!({
         "sessions": [],
@@ -59,10 +55,7 @@ async fn list_sessions(
 }
 
 /// Revoke a specific session
-async fn revoke_session(
-    path: web::Path<String>,
-    _auth_service: web::Data<AuthService>,
-) -> Result<HttpResponse, actix_web::Error> {
+async fn revoke_session(path: web::Path<String>) -> Result<HttpResponse, actix_web::Error> {
     let session_id = path.into_inner();
 
     // TODO: Implement with SessionService::revoke_session
@@ -152,6 +145,26 @@ mod tests {
         // Test revoke auth session endpoint
         let path = web::Path::from("test-session-id".to_string());
         let revoke_resp = revoke_session(path, auth_service).await.unwrap();
+        assert_eq!(revoke_resp.status(), 200);
+    }
+
+    #[actix_web::test]
+    async fn test_placeholder_endpoints() {
+        // Test the placeholder endpoints work without a database
+        let _jwt_service = JwtService::new("test_secret");
+        let _database = Database::new("postgresql://localhost/unused").await;
+
+        // Test auth profile endpoint
+        let profile_resp = get_profile().await.unwrap();
+        assert_eq!(profile_resp.status(), 200);
+
+        // Test auth sessions endpoint
+        let sessions_resp = list_sessions().await.unwrap();
+        assert_eq!(sessions_resp.status(), 200);
+
+        // Test revoke auth session endpoint
+        let path = web::Path::from("test-session-id".to_string());
+        let revoke_resp = revoke_session(path).await.unwrap();
         assert_eq!(revoke_resp.status(), 200);
     }
 }
