@@ -125,32 +125,6 @@ mod tests {
     #[actix_web::test]
     async fn test_placeholder_endpoints() {
         // Test the placeholder endpoints work without a database
-        let jwt_service = JwtService::new("test_secret");
-        let database =
-            Database::new("postgresql://localhost/unused").await.unwrap_or_else(|_| unsafe {
-                std::mem::transmute::<[u8; size_of::<Database>()], Database>(
-                    [0u8; size_of::<Database>()],
-                )
-            });
-        let auth_service = web::Data::new(AuthService::new(database, jwt_service));
-
-        // Test auth profile endpoint
-        let profile_resp = get_profile(auth_service.clone()).await.unwrap();
-        assert_eq!(profile_resp.status(), 200);
-
-        // Test auth sessions endpoint
-        let sessions_resp = list_sessions(auth_service.clone()).await.unwrap();
-        assert_eq!(sessions_resp.status(), 200);
-
-        // Test revoke auth session endpoint
-        let path = web::Path::from("test-session-id".to_string());
-        let revoke_resp = revoke_session(path, auth_service).await.unwrap();
-        assert_eq!(revoke_resp.status(), 200);
-    }
-
-    #[actix_web::test]
-    async fn test_placeholder_endpoints() {
-        // Test the placeholder endpoints work without a database
         let _jwt_service = JwtService::new("test_secret");
         let _database = Database::new("postgresql://localhost/unused").await;
 
