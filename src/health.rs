@@ -64,7 +64,7 @@ pub enum ServiceStatus {
     Healthy,
     /// Service is operational but with warnings
     Degraded,
-    /// Service is not operational
+    /// Service isn't operational
     Unhealthy,
 }
 
@@ -189,6 +189,7 @@ pub struct HealthState {
 
 impl HealthState {
     /// Create a new health state
+    #[must_use]
     pub fn new(service_name: String, version: String) -> Self {
         Self {
             start_time: SystemTime::now(),
@@ -198,6 +199,7 @@ impl HealthState {
     }
 
     /// Get service uptime in seconds
+    #[must_use]
     pub fn uptime(&self) -> u64 {
         self.start_time.elapsed().unwrap_or(Duration::from_secs(0)).as_secs()
     }
@@ -364,7 +366,7 @@ async fn check_database_health(database: &Database) -> DependencyStatus {
     DependencyStatus {
         name: "PostgreSQL Database".to_string(),
         status,
-        response_time_ms: start_time.elapsed().as_millis() as u64,
+        response_time_ms: u64::try_from(start_time.elapsed().as_millis()).expect("REASON"),
         last_check: Utc::now(),
         error,
     }
@@ -392,24 +394,116 @@ fn get_cpu_info() -> CpuInfo {
     }
 }
 
+fn percent_u64(used: u64, total: u64) -> f64 {
+    if total == 0 {
+        return 0.0;
+    }
+
+    // percent * 100 en entier (basis points), arrondi au plus proche
+    let used = u128::from(used);
+    let total = u128::from(total);
+
+    // 0..=10000 (basis points)
+    let basis_points_u128 = (used * 10_000 + total / 2) / total;
+
+    let basis_points_u16: u16 =
+        basis_points_u128.min(u128::from(u16::MAX)).try_into().unwrap_or(u16::MAX);
+
+    f64::from(basis_points_u16) / 100.0
+}
+
+fn compute_memory(total: u64, available: u64) -> MemoryInfo {
+    let used = total.saturating_sub(available);
+    let usage_percent = percent_u64(used, total);
+
+    MemoryInfo {
+        total,
+        available,
+        used,
+        usage_percent,
+    }
+}
+
 /// Get disk information
 fn get_disk_info() -> DiskInfo {
-    DiskInfo {
-        total: 0,
-        available: 0,
-        used: 0,
-        usage_percent: 0.0,
+    use sysinfo::Disks;
+
+    let disks = Disks::new_with_refreshed_list();
+
+    let mut total: u64 = 0;
+    let mut available: u64 = 0;
+
+    for d in &disks {
+        total = total.saturating_add(d.total_space());
+        available = available.saturating_add(d.available_space());
     }
+
+    let used = total.saturating_sub(available);
+    let usage_percent = percent_u64(used, total);
+
+    DiskInfo {
+        total,
+        available,
+        used,
+        usage_percent,
+    }
+}
+
+fn bytes_from_kib(kib: u64) -> u64 {
+    kib.saturating_mul(1024)
+}
+
+fn memory_from_sysinfo() -> Option<(u64, u64)> {
+    use sysinfo::System;
+
+    let mut sys = System::new();
+    sys.refresh_memory();
+
+    let total = bytes_from_kib(sys.total_memory());
+    let available = bytes_from_kib(sys.available_memory());
+
+    (total > 0).then_some((total, available))
+}
+
+fn parse_meminfo_kib(meminfo: &str) -> Option<(u64, u64)> {
+    fn extract_kib(line: &str) -> Option<u64> {
+        let mut it = line.split_whitespace();
+        it.next()?; // "MemTotal:" / "MemAvailable:"
+        it.next()?.parse::<u64>().ok()
+    }
+
+    let mut total_kib: Option<u64> = None;
+    let mut available_kib: Option<u64> = None;
+
+    for line in meminfo.lines() {
+        if total_kib.is_none() && line.starts_with("MemTotal:") {
+            total_kib = extract_kib(line);
+            continue;
+        }
+        if available_kib.is_none() && line.starts_with("MemAvailable:") {
+            available_kib = extract_kib(line);
+            continue;
+        }
+        if total_kib.is_some() && available_kib.is_some() {
+            break;
+        }
+    }
+
+    Some((total_kib?, available_kib?))
+}
+
+fn memory_from_proc_meminfo() -> Option<(u64, u64)> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let (total_kib, available_kib) = parse_meminfo_kib(&meminfo)?;
+    Some((bytes_from_kib(total_kib), bytes_from_kib(available_kib)))
 }
 
 /// Get memory information
 fn get_memory_info() -> MemoryInfo {
-    MemoryInfo {
-        total: 0,
-        available: 0,
-        used: 0,
-        usage_percent: 0.0,
-    }
+    let (total, available) =
+        memory_from_sysinfo().or_else(memory_from_proc_meminfo).unwrap_or((0, 0));
+
+    compute_memory(total, available)
 }
 
 /// Get health metrics
