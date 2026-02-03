@@ -46,6 +46,8 @@ impl ResponseHandler {
     ///
     /// # Examples
     /// ```rust
+    /// use actix_web::test;
+    ///
     /// // API client will receive JSON
     /// let req = test::TestRequest::default()
     ///     .insert_header(("Accept", "application/json"))
